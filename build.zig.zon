@@ -1,0 +1,7 @@
+.{
+    .name = .janet,
+    .version = "1.41.3-dev",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{""},
+    .fingerprint = 0x9b91c47aa885c5a7,
+}

@@ -161,3 +161,8 @@ CTestTestfile.cmake
 
 # Astyle
 *.orig
+
+# Zig
+.zig-cache
+zig-out
+zig-pkg
