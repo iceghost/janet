@@ -14,6 +14,7 @@ pub const c = @cImport({
 });
 
 comptime {
+    _ = @import("include/janet.zig");
     _ = @import("core/array.zig");
     _ = @import("core/util.zig");
 

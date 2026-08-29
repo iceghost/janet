@@ -1073,23 +1073,6 @@ void *symbol_clib(HINSTANCE clib, const char *sym) {
 #endif
 #endif
 
-/* Alloc function macro fills */
-void *(janet_malloc)(size_t size) {
-    return janet_malloc(size);
-}
-
-void (janet_free)(void *ptr) {
-    janet_free(ptr);
-}
-
-void *(janet_calloc)(size_t nmemb, size_t size) {
-    return janet_calloc(nmemb, size);
-}
-
-void *(janet_realloc)(void *ptr, size_t size) {
-    return janet_realloc(ptr, size);
-}
-
 /* Avoid overflow and underflow, especially on 32-bit systems */
 void *array_allocate(size_t element_size, int32_t count) {
     if (count < 0) return NULL;

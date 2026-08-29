@@ -2402,18 +2402,6 @@ JANET_API void *(janet_malloc)(size_t);
 JANET_API void *(janet_realloc)(void *, size_t);
 JANET_API void *(janet_calloc)(size_t, size_t);
 JANET_API void (janet_free)(void *);
-#ifndef janet_malloc
-#define janet_malloc(X) malloc((X))
-#endif
-#ifndef janet_realloc
-#define janet_realloc(X, Y) realloc((X), (Y))
-#endif
-#ifndef janet_calloc
-#define janet_calloc(X, Y) calloc((X), (Y))
-#endif
-#ifndef janet_free
-#define janet_free(X) free((X))
-#endif
 
 /***** END SECTION MAIN *****/
 

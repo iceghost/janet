@@ -2677,7 +2677,7 @@ JANET_CORE_FN(os_realpath,
         janet_panicf("path does not exist: %v", ret);
     }
 #else
-    janet_free(dest);
+    free(dest); /* realpath allocated this with the system allocator */
 #endif
     return ret;
 #endif
