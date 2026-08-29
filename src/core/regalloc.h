@@ -49,6 +49,7 @@ typedef struct {
 
 void janetc_regalloc_init(JanetcRegisterAllocator *ra);
 void janetc_regalloc_deinit(JanetcRegisterAllocator *ra);
+void janetc_regalloc_reserve(JanetcRegisterAllocator *ra, int32_t count);
 
 int32_t janetc_regalloc_1(JanetcRegisterAllocator *ra);
 void janetc_regalloc_free(JanetcRegisterAllocator *ra, int32_t reg);

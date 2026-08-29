@@ -188,6 +188,7 @@ void janetc_popscope(JanetCompiler *c) {
         if (oldscope->flags & JANET_SCOPE_CLOSURE) {
             newscope->flags |= JANET_SCOPE_CLOSURE;
         }
+        janetc_regalloc_reserve(&newscope->ra, oldscope->ra.max + 1);
         if (newscope->ra.max < oldscope->ra.max) {
             newscope->ra.max = oldscope->ra.max;
         }
@@ -232,6 +233,7 @@ void janetc_popscope_keepslot(JanetCompiler *c, JanetSlot retslot) {
     janetc_popscope(c);
     scope = c->scope;
     if (scope && retslot.envindex < 0 && retslot.index >= 0) {
+        janetc_regalloc_reserve(&scope->ra, retslot.index + 1);
         janetc_regalloc_touch(&scope->ra, retslot.index);
     }
 }
@@ -419,6 +421,7 @@ found:
     scope->flags |= JANET_SCOPE_ENV;
 
     /* In the function scope, allocate the slot as an upvalue */
+    janetc_regalloc_reserve(&scope->ua, ret.index + 1);
     janetc_regalloc_touch(&scope->ua, ret.index);
 
     /* Iterate through child scopes and make sure environment is propagated */

@@ -189,6 +189,7 @@ void janet_bytecode_movopt(JanetFuncDef *def) {
     /* Iterate this until no more instructions can be removed. */
     while (recur) {
         janetc_regalloc_init(&ra);
+        janetc_regalloc_reserve(&ra, def->slotcount);
 
         /* Look for slots that have writes but no reads (and aren't in the closure bitset). */
         if (def->closure_bitset != NULL) {

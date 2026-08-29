@@ -99,11 +99,18 @@ static void pushchunk(JanetcRegisterAllocator *ra) {
     ra->count = newcount;
 }
 
+/* Ensure registers below count can be accessed. */
+void janetc_regalloc_reserve(JanetcRegisterAllocator *ra, int32_t count) {
+    janet_assert(count >= 0, "invalid register count");
+    int32_t chunkcount = count ? ((count - 1) >> 5) + 1 : 0;
+    while (ra->count < chunkcount) pushchunk(ra);
+}
+
 /* Reallocate a given register */
 void janetc_regalloc_touch(JanetcRegisterAllocator *ra, int32_t reg) {
     int32_t chunk = reg >> 5;
     int32_t bit = reg & 0x1F;
-    while (chunk >= ra->count) pushchunk(ra);
+    janet_assert(chunk < ra->count, "unreserved register");
     ra->chunks[chunk] |= ithbit(bit);
 }
 
@@ -145,7 +152,7 @@ void janetc_regalloc_free(JanetcRegisterAllocator *ra, int32_t reg) {
 int janetc_regalloc_check(JanetcRegisterAllocator *ra, int32_t reg) {
     int32_t chunk = reg >> 5;
     int32_t bit = reg & 0x1F;
-    while (chunk >= ra->count) pushchunk(ra);
+    janet_assert(chunk < ra->count, "unreserved register");
     return !!(ra->chunks[chunk] & ithbit(bit));
 }
 
