@@ -4,10 +4,15 @@ const is_bootstrap = options.bootstrap;
 
 const x = @import("x");
 
+pub const compile = @import("compile.zig");
 pub const gc = @import("gc.zig");
 pub const value = @import("value.zig");
 pub const Array = value.Array;
 pub const Value = value.Box;
+
+pub fn oom() noreturn {
+    @panic("out of memory");
+}
 
 pub const c = @cImport({
     @cInclude("janet.h");
@@ -16,6 +21,7 @@ pub const c = @cImport({
 comptime {
     _ = @import("include/janet.zig");
     _ = @import("core/array.zig");
+    _ = @import("core/regalloc.zig");
     _ = @import("core/util.zig");
 
     if (!is_bootstrap) {

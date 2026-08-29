@@ -29,7 +29,7 @@
 
 /* Placeholder for allocating temporary registers */
 typedef enum {
-    JANETC_REGTEMP_0,
+    JANETC_REGTEMP_0 = 240,
     JANETC_REGTEMP_1,
     JANETC_REGTEMP_2,
     JANETC_REGTEMP_3,

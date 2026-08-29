@@ -121,7 +121,6 @@ fn add_cjanet(b: *std.Build, mod: *std.Build.Module, options: struct {
         "src/core/parse.c",
         "src/core/peg.c",
         "src/core/pp.c",
-        "src/core/regalloc.c",
         "src/core/run.c",
         "src/core/specials.c",
         "src/core/state.c",
