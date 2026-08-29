@@ -1,13 +1,43 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const builtin = @import("builtin");
 
 const janet = @import("janet");
 
 pub const Array = extern struct {
     gc: janet.gc.Head,
-    count: i32,
-    capacity: i32,
+    count: u32,
+    capacity: u32,
     data: [*]janet.Value,
+
+    /// Same as `Array`, but with potentially negative counts and null data
+    pub const Extern = extern struct {
+        gc: janet.gc.Head,
+        count: i32,
+        capacity: i32,
+        data: ?[*]janet.Value,
+
+        pub fn cast(self: *Extern) *Array {
+            assert(self.count >= 0);
+            assert(self.capacity >= 0);
+            assert(self.data != null);
+            return @ptrCast(self);
+        }
+
+        pub fn wrap(arr: *Array) *Extern {
+            return @ptrCast(arr);
+        }
+    };
+
+    /// Pop a value from the top of the array
+    pub fn pop(self: *Array) janet.Value {
+        if (self.count > 0) {
+            defer self.count -= 1;
+            return self.data[self.count - 1];
+        } else {
+            return .nil;
+        }
+    }
 };
 
 pub const Box = extern struct {
