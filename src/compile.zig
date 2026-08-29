@@ -2,7 +2,91 @@ const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
 
+const janet = @import("janet");
 const x = @import("x");
+
+pub const SourceMapping = extern struct {
+    line: i32,
+    column: i32,
+};
+
+pub const CompileResult = extern struct {
+    funcdef: ?*janet.c.JanetFuncDef,
+    @"error": ?[*:0]const u8,
+    macrofiber: ?*janet.c.JanetFiber,
+    error_mapping: SourceMapping,
+    status: Status,
+
+    pub const Status = enum(i32) {
+        ok,
+        @"error",
+    };
+};
+
+pub const Slot = extern struct {
+    constant: janet.Value,
+    index: i32,
+    envindex: i32,
+    flags: u32,
+};
+
+pub const SymPair = extern struct {
+    slot: Slot,
+    sym: ?[*:0]const u8,
+    sym2: ?[*:0]const u8,
+    keep: i32,
+    referenced: i32,
+    birth_pc: u32,
+    death_pc: u32,
+};
+
+pub const EnvRef = extern struct {
+    envindex: i32,
+    scope: *Scope,
+};
+
+pub const Scope = extern struct {
+    name: [*:0]const u8,
+    parent: ?*Scope,
+    child: ?*Scope,
+    consts: ?[*]janet.Value,
+    syms: ?[*]SymPair,
+    defs: ?[*]*janet.c.JanetFuncDef,
+    ra: Register.Allocator,
+    ua: Register.Allocator,
+    envs: ?[*]EnvRef,
+    bytecode_start: i32,
+    flags: i32,
+};
+
+pub const State = extern struct {
+    scope: ?*Scope,
+    buffer: ?[*]u32,
+    mapbuffer: ?[*]SourceMapping,
+    env: ?*janet.c.JanetTable,
+    source: ?[*:0]const u8,
+    result: CompileResult,
+    current_mapping: SourceMapping,
+    recursion_guard: i32,
+    lints: ?*janet.Array.Extern,
+    is_redef: i32,
+};
+
+pub const Fopts = extern struct {
+    compiler: *State,
+    hint: Slot,
+    flags: u32,
+};
+
+pub const FunOptimizer = extern struct {
+    can_optimize: *const fn (Fopts, ?[*]Slot) callconv(.c) i32,
+    optimize: *const fn (Fopts, ?[*]Slot) callconv(.c) Slot,
+};
+
+pub const Special = extern struct {
+    name: [*:0]const u8,
+    compile: *const fn (Fopts, i32, ?[*]const janet.Value) callconv(.c) Slot,
+};
 
 pub const Register = enum(u32) {
     temp_0 = 240,
