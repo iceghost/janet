@@ -1,13 +1,20 @@
 const std = @import("std");
-const is_bootstrap = @import("root").janet_options.bootstrap;
+pub const options = @import("root").janet_options;
+const is_bootstrap = options.bootstrap;
 
 const x = @import("x");
+
+pub const gc = @import("gc.zig");
+pub const value = @import("value.zig");
+pub const Array = value.Array;
+pub const Value = value.Box;
 
 pub const c = @cImport({
     @cInclude("janet.h");
 });
 
 comptime {
+    _ = @import("core/array.zig");
     _ = @import("core/util.zig");
 
     if (!is_bootstrap) {

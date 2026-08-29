@@ -83,6 +83,7 @@ fn create_janet_module(b: *std.Build, options: struct {
         b.modules.putNoClobber(b.allocator, name, mod) catch @panic("oom");
     }
     mod.addImport("x", options.module_x);
+    mod.addImport("janet", mod);
     // Those include paths are for @cImport
     mod.addIncludePath(b.path("src/conf"));
     mod.addIncludePath(b.path("src/include"));

@@ -113,15 +113,6 @@ void janet_array_push(JanetArray *array, Janet x) {
     array->count = newcount;
 }
 
-/* Pop a value from the top of the array */
-Janet janet_array_pop(JanetArray *array) {
-    if (array->count) {
-        return array->data[--array->count];
-    } else {
-        return janet_wrap_nil();
-    }
-}
-
 /* Look at the last value in the array */
 Janet janet_array_peek(JanetArray *array) {
     if (array->count) {
