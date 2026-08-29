@@ -28,12 +28,9 @@ pub fn build(b: *Build) !void {
         .module_x = mod_x,
         .path_core_image = path_core_image,
     }));
-    exe.root_module.addObject(build_cjanet(b, .{
-        .name = "cjanet_main",
+    add_cjanet(b, exe.root_module, .{
         .kind = .executable,
-        .target = target,
-        .optimize = optimize,
-    }));
+    });
     b.installArtifact(exe);
 
     const exe_test = b.addTest(.{
@@ -50,12 +47,9 @@ pub fn build(b: *Build) !void {
     });
     exe_test.root_module.addImport("janet", exe_test.root_module);
     exe_test.root_module.addImport("x", mod_x);
-    exe_test.root_module.addObject(build_cjanet(b, .{
-        .name = "cjanet_test",
+    add_cjanet(b, exe_test.root_module, .{
         .kind = .library,
-        .target = target,
-        .optimize = optimize,
-    }));
+    });
     const run_test = b.addRunArtifact(exe_test);
     run_test.addArtifactArg(exe);
     run_test.addDirectoryArg(b.path("test"));
@@ -93,16 +87,13 @@ fn create_janet_module(b: *std.Build, options: struct {
     return mod;
 }
 
-fn build_cjanet(b: *std.Build, options: struct {
-    name: []const u8,
+fn add_cjanet(b: *std.Build, mod: *std.Build.Module, options: struct {
     kind: enum {
         bootstrap,
         executable,
         library,
     },
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-}) *std.Build.Step.Compile {
+}) void {
     const c_flags: []const []const u8 = &.{"-std=c99"};
     const core_src: []const []const u8 = &.{
         "src/core/abstract.c",
@@ -147,37 +138,32 @@ fn build_cjanet(b: *std.Build, options: struct {
         "src/core/wrap.c",
     };
 
-    const obj = b.addObject(.{
-        .name = options.name,
-        .root_module = b.createModule(.{
-            .optimize = options.optimize,
-            .target = options.target,
-        }),
-    });
-    obj.root_module.addCSourceFiles(.{
+    mod.addCSourceFiles(.{
         .root = b.path(""),
-        .files = core_src ++ .{
-            "src/boot/array_test.c",
-            "src/boot/buffer_test.c",
-            "src/boot/number_test.c",
-            "src/boot/system_test.c",
-            "src/boot/table_test.c",
+        .files = switch (options.kind) {
+            .bootstrap => core_src ++ .{
+                "src/boot/array_test.c",
+                "src/boot/buffer_test.c",
+                "src/boot/number_test.c",
+                "src/boot/system_test.c",
+                "src/boot/table_test.c",
+            },
+            else => core_src,
         },
-        .flags = c_flags ++ switch (options.kind) {
-            .bootstrap => .{"-DJANET_BOOTSTRAP"},
-            else => .{"-fvisibility=hidden"},
+        .flags = switch (options.kind) {
+            .bootstrap => c_flags ++ .{"-DJANET_BOOTSTRAP"},
+            else => c_flags ++ .{"-fvisibility=hidden"},
         },
     });
-    obj.root_module.addIncludePath(b.path("src/boot"));
-    obj.root_module.addIncludePath(b.path("src/conf"));
-    obj.root_module.addIncludePath(b.path("src/include"));
+    mod.addIncludePath(b.path("src/boot"));
+    mod.addIncludePath(b.path("src/conf"));
+    mod.addIncludePath(b.path("src/include"));
     if (options.kind == .executable) {
-        obj.root_module.addCSourceFile(.{
+        mod.addCSourceFile(.{
             .file = b.path("src/mainclient/shell.c"),
             .flags = c_flags,
         });
     }
-    return obj;
 }
 
 fn build_core_image(b: *std.Build, options: struct {
@@ -194,12 +180,9 @@ fn build_core_image(b: *std.Build, options: struct {
         }),
     });
     boot.root_module.addImport("janet", mod);
-    boot.root_module.addObject(build_cjanet(b, .{
-        .name = "cjanet_bootstrap",
+    add_cjanet(b, boot.root_module, .{
         .kind = .bootstrap,
-        .target = b.graph.host,
-        .optimize = .Debug,
-    }));
+    });
 
     const run_boot = b.addRunArtifact(boot);
     run_boot.addDirectoryArg(b.path(""));
