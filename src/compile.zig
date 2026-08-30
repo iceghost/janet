@@ -139,7 +139,15 @@ pub const State = extern struct {
 pub const Fopts = extern struct {
     compiler: *State,
     hint: Slot,
-    flags: u32,
+    flags: Flags,
+
+    pub const Flags = packed struct(u32) {
+        type: janet.Value.TypeFlags,
+        tail: bool,
+        hint: bool,
+        drop: bool,
+        accept_splice: bool,
+    };
 };
 
 pub const FunOptimizer = extern struct {
