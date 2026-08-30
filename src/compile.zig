@@ -28,7 +28,20 @@ pub const Slot = extern struct {
     constant: janet.Value,
     index: i32,
     envindex: i32,
-    flags: u32,
+    flags: Flags,
+
+    pub const Flags = packed struct(u32) {
+        type: janet.Value.TypeFlags,
+        constant: bool,
+        named: bool,
+        mutable: bool,
+        ref: bool,
+        returned: bool,
+        dep_note: bool,
+        dep_warn: bool,
+        dep_error: bool,
+        spliced: bool,
+    };
 };
 
 pub const SymPair = extern struct {
