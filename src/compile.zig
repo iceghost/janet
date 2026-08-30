@@ -11,7 +11,7 @@ pub const SourceMapping = extern struct {
     column: i32,
 };
 
-pub const CompileResult = extern struct {
+pub const Result = extern struct {
     funcdef: ?*janet.c.JanetFuncDef,
     @"error": ?[*:0]const u8,
     macrofiber: ?*janet.c.JanetFiber,
@@ -85,7 +85,7 @@ pub const State = extern struct {
     mapbuffer: ThinArrayList(SourceMapping),
     env: ?*janet.c.JanetTable,
     source: ?[*:0]const u8,
-    result: CompileResult,
+    result: Result,
     current_mapping: SourceMapping,
     recursion_guard: i32,
     lints: ?*janet.Array.Extern,
@@ -97,7 +97,7 @@ pub const State = extern struct {
         mapbuffer: ThinArrayList(SourceMapping),
         env: ?*janet.c.JanetTable,
         source: ?[*:0]const u8,
-        result: CompileResult,
+        result: Result,
         current_mapping: SourceMapping,
         recursion_guard: i32,
         lints: ?*janet.Array.Extern,
