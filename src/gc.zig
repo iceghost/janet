@@ -38,6 +38,13 @@ pub const Object = extern struct {
         refcount: std.atomic.Value(i32),
     },
 
+    const disabled: Object = .{
+        .flags = .{
+            .type = .none,
+        },
+        .data = .{ .next = null },
+    };
+
     pub const Flags = packed struct(u32) {
         type: ObjectType,
         reachable: bool = false,
@@ -62,7 +69,9 @@ const Deferral = struct {
     object: *Object,
     size: u32,
 
-    pub fn finish(self: Deferral, state: *State) void {
+    pub fn finish(self: Deferral, state: *State, ty: ObjectType) void {
+        self.object.flags.type = ty;
+
         const c_state = state.c_state;
         c_state.gc_next_collection += self.size;
         c_state.blocks_count += 1;

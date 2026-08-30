@@ -6,6 +6,8 @@ const builtin = @import("builtin");
 
 const janet = @import("janet");
 
+const Value = janet.Value;
+
 pub const Array = extern struct {
     gc: janet.gc.Object,
     count: u32,
@@ -169,3 +171,42 @@ pub const Table = extern struct {
         //
     }
 };
+
+fn hash_mix(input: u32, more: u32) u32 {
+    const mix1 = more +% 0x9e3779b9 +% (input << 6) +% (input >> 2);
+    return input ^ (0x9e3779b9 +% (mix1 << 6) +% (mix1 >> 2));
+}
+
+pub const Tuple = extern struct {
+    gc: janet.gc.Object,
+    count: u32,
+    hash: u32,
+    line: i32,
+    column: i32,
+    data: [0]Value = .{},
+
+    pub fn create_from_slice(s: *janet.runtime.State, values: []const Value) Allocator.Error!*Tuple {
+        const handle, const head, const elems = try janet.gc.create_deferred(s.gpa, Tuple, Value, values.len);
+        defer handle.finish(s, .tuple);
+
+        @memcpy(elems, values);
+
+        head.* = .{
+            .gc = .disabled,
+            .count = @intCast(values.len),
+            // initial
+            .hash = 33,
+            .line = -1,
+            .column = -1,
+        };
+        for (values) |v| head.hash = hash_mix(head.hash, hash(v));
+
+        return head;
+    }
+};
+
+extern fn janet_hash(v: Value) callconv(.c) i32;
+
+pub fn hash(v: Value) u32 {
+    return @bitCast(janet_hash(v));
+}
