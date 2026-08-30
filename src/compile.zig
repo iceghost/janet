@@ -57,11 +57,30 @@ pub const Scope = extern struct {
     ua: Register.Allocator,
     envs: ThinArrayList(EnvRef),
     bytecode_start: i32,
-    flags: i32,
+    flags: Flags,
+
+    pub const Flags = packed struct(i32) {
+        function: bool,
+        env: bool,
+        top: bool,
+        unused: bool,
+        closure: bool,
+        @"while": bool,
+        reserved: u26 = 0,
+    };
+
+    pub fn find_outermost_function(self: *Scope) ?*Scope {
+        var it: ?*Scope = self;
+        while (it) |s| : (it = s.parent) {
+            if (s.flags.function) return s;
+        } else {
+            return null;
+        }
+    }
 };
 
 pub const State = extern struct {
-    scope: ?*Scope,
+    scope: *Scope,
     buffer: ThinArrayList(u32),
     mapbuffer: ThinArrayList(SourceMapping),
     env: ?*janet.c.JanetTable,
@@ -71,6 +90,37 @@ pub const State = extern struct {
     recursion_guard: i32,
     lints: ?*janet.Array.Extern,
     is_redef: i32,
+
+    const Extern = extern struct {
+        scope: ?*Scope,
+        buffer: ThinArrayList(u32),
+        mapbuffer: ThinArrayList(SourceMapping),
+        env: ?*janet.c.JanetTable,
+        source: ?[*:0]const u8,
+        result: CompileResult,
+        current_mapping: SourceMapping,
+        recursion_guard: i32,
+        lints: ?*janet.Array.Extern,
+        is_redef: i32,
+    };
+
+    /// Emit a raw instruction with source mapping
+    fn emit(self: *State, instruction: janet.bytecode.Quadruple) void {
+        self.buffer.append(instruction);
+        self.mapbuffer.append(self.current_mapping);
+    }
+
+    /// Add a constant to the current scope, return the index of the constant
+    fn constant(self: *State, v: janet.Value) u32 {
+        const scope = self.scope.find_outermost_function().?;
+        // Check if already added
+        for (scope.consts.items(), 0..) |c, i| {
+            if (janet.value.eql(v, c)) return i;
+        }
+        try scope.consts.ensure_bounded(1, 0xFFFF);
+        scope.consts.append(v);
+        return scope.consts.items().len;
+    }
 };
 
 pub const Fopts = extern struct {

@@ -4,6 +4,7 @@ const is_bootstrap = options.bootstrap;
 
 const x = @import("x");
 
+pub const bytecode = @import("bytecode.zig");
 pub const compile = @import("compile.zig");
 pub const gc = @import("gc.zig");
 pub const value = @import("value.zig");

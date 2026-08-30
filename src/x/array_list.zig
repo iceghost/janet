@@ -38,17 +38,26 @@ pub fn Thin(comptime T: type) type {
             return x.mem_recover_head(Head, @ptrCast(self.base.?));
         }
 
+        pub fn items(self: *Self) []align(alignment_size) T {
+            if (self.base) |b| {
+                const h = self.head();
+                return b[0..h.count];
+            } else {
+                return &.{};
+            }
+        }
+
         pub fn reserve_total_precise(self: *Self, gpa: Allocator, total: u32) Allocator.Error!void {
             if (self.base == null) {
                 if (total == 0) return;
                 const size = @sizeOf(Head) + @as(usize, total) * @sizeOf(T);
                 const memory = try gpa.alignedAlloc(u8, alignment, size);
-                const h, const items = x.mem_chop_head(memory, Head);
+                const h, const elems = x.mem_chop_head(memory, Head);
                 h.* = .{
                     .capacity = total,
                     .count = 0,
                 };
-                self.base = @ptrCast(items.ptr);
+                self.base = @ptrCast(elems.ptr);
                 return;
             }
 
@@ -67,9 +76,9 @@ pub fn Thin(comptime T: type) type {
                 break :blk memory;
             };
 
-            const new_head, const items = x.mem_chop_head(new_memory, Head);
+            const new_head, const elems = x.mem_chop_head(new_memory, Head);
             new_head.capacity = total;
-            self.base = @ptrCast(items.ptr);
+            self.base = @ptrCast(elems.ptr);
         }
 
         pub fn append(self: Self, item: T) void {
@@ -96,6 +105,7 @@ test "Thin appends and pops items" {
     list.append(10);
     list.append(20);
 
+    try std.testing.expectEqualSlices(u32, &.{ 10, 20 }, list.items());
     try std.testing.expectEqual(20, list.pop());
     try std.testing.expectEqual(10, list.pop());
 }
