@@ -5,6 +5,7 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 
 const janet = @import("janet");
+const x = @import("x");
 
 const Value = janet.Value;
 
@@ -106,8 +107,8 @@ pub const Box = extern struct {
         const pointer_shift = representation.nanbox64.pointer_shift;
         pub const nil = box_any(.nil, 1);
 
-        pub fn hash(x: Nan64) callconv(.c) u64 {
-            return @bitCast(x);
+        pub fn hash(v: Nan64) callconv(.c) u64 {
+            return @bitCast(v);
         }
 
         fn box_any(
@@ -126,28 +127,87 @@ pub const Box = extern struct {
             };
         }
 
-        fn is_tagged(x: Nan64) bool {
-            return std.math.isNan(x.float) and x.tagged.high == 0x1FFF;
+        fn is_tagged(v: Nan64) bool {
+            return std.math.isNan(v.float) and v.tagged.high == 0x1FFF;
         }
 
-        pub fn truthy(x: Nan64) bool {
-            if (!is_tagged(x)) return true;
-            return switch (x.tagged.tag) {
+        pub fn truthy(v: Nan64) bool {
+            if (!is_tagged(v)) return true;
+            return switch (v.tagged.tag) {
                 .nil => false,
-                .boolean => x.tagged.payload != 0,
+                .boolean => v.tagged.payload != 0,
                 else => true,
             };
         }
 
-        pub fn unwrap_tag(x: Nan64) Tag {
-            if (!is_tagged(x)) return .number;
-            return x.tagged.tag;
+        pub fn unwrap_tag(v: Nan64) Tag {
+            if (!is_tagged(v)) return .number;
+            return v.tagged.tag;
         }
 
-        pub fn pointer_bits(x: Nan64) usize {
-            return @as(usize, x.tagged.payload) << pointer_shift;
+        pub fn pointer_bits(v: Nan64) usize {
+            return @as(usize, v.tagged.payload) << pointer_shift;
         }
     };
+};
+
+pub const Pair = extern struct {
+    key: Value,
+    val: Value,
+};
+
+pub const Struct = extern struct {
+    gc: janet.gc.Object,
+    count: u32,
+    hash: u32,
+    capacity: u32,
+    proto: ?*Struct,
+    data: [0]Pair = .{},
+
+    pub const Extern = extern struct {
+        gc: janet.gc.Object,
+        count: i32,
+        hash: u32,
+        capacity: i32,
+        proto: ?*Extern,
+        data: [0]Pair = .{},
+
+        pub const Pointer = extern struct {
+            ptr: [*]align(@alignOf(Extern)) u8,
+
+            pub fn cast_head(self: Pointer) *Struct {
+                const head = x.mem_recover_head(Extern, self.ptr);
+                assert(head.count >= 0);
+                assert(head.capacity >= 0);
+                return @ptrCast(head);
+            }
+
+            pub fn wrap(s: *Struct) Pointer {
+                return .{ .ptr = @ptrCast(&s.data) };
+            }
+        };
+    };
+
+    pub fn begin(s: *janet.State, count: u32) Allocator.Error!*Struct {
+        const doubled = std.math.mul(u32, count, 2) catch return error.OutOfMemory;
+        const minimum = std.math.add(u32, doubled, 1) catch return error.OutOfMemory;
+        const capacity = std.math.ceilPowerOfTwo(u32, minimum) catch return error.OutOfMemory;
+        if (capacity > std.math.maxInt(i32)) return error.OutOfMemory;
+
+        const handle, const head, const entries = try janet.gc.create_deferred(s.gpa, Struct, Pair, capacity);
+        defer handle.finish(s, .@"struct");
+
+        head.* = .{
+            .gc = .disabled,
+            .count = count,
+            .hash = 0,
+            .capacity = capacity,
+            .proto = null,
+        };
+        @memset(entries, .{ .key = .nil, .val = .nil });
+
+        return head;
+    }
 };
 
 pub const Table = extern struct {

@@ -28,24 +28,6 @@
 #include <math.h>
 #endif
 
-/* Begin creation of a struct */
-JanetKV *janet_struct_begin(int32_t count) {
-    /* Calculate capacity as power of 2 after 2 * count. */
-    int32_t capacity = janet_tablen(2 * count);
-    if (capacity < 0) capacity = janet_tablen(count + 1);
-
-    size_t size = sizeof(JanetStructHead) + (size_t) capacity * sizeof(JanetKV);
-    JanetStructHead *head = janet_gcalloc(JANET_MEMORY_STRUCT, size);
-    head->length = count;
-    head->capacity = capacity;
-    head->hash = 0;
-    head->proto = NULL;
-
-    JanetKV *st = (JanetKV *)(head->data);
-    janet_memempty(st, capacity);
-    return st;
-}
-
 /* Find an item in a struct without looking for prototypes. Should be similar to janet_dict_find, but
  * specialized to structs (slightly more compact). */
 const JanetKV *janet_struct_find(const JanetKV *st, Janet key) {
