@@ -50,10 +50,15 @@ pub const Object = extern struct {
         reachable: bool = false,
         disabled: bool = false,
         unused: u6 = 0,
-        payload: packed union(u16) {
-            unused: u16,
-        } = .{ .unused = 0 },
+        payload: u16 = 0,
     };
+
+    pub fn flags_typed(
+        o: *Object,
+        comptime T: type,
+    ) *align(@alignOf(Object):@bitOffsetOf(Flags, "payload"):@sizeOf(Flags)) T {
+        return @ptrCast(&o.flags.payload);
+    }
 };
 
 const AllocationHead = extern struct {
