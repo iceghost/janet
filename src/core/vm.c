@@ -1659,6 +1659,7 @@ Janet janet_mcall(const char *name, int32_t argc, Janet *argv) {
 
 /* Setup VM */
 int janet_init(void) {
+    janet_init_zig(&janet_vm);
 
     /* Garbage collection */
     janet_vm.blocks = NULL;
@@ -1760,4 +1761,5 @@ void janet_deinit(void) {
 #ifdef JANET_NET
     janet_net_deinit();
 #endif
+    janet_deinit_zig(&janet_vm);
 }

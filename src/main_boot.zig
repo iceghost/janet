@@ -17,6 +17,9 @@ pub fn main(init: std.process.Init) !u8 {
     const allocator = init.gpa;
     const argv = try init.minimal.args.toSlice(init.arena.allocator());
 
+    janet.runtime.state_shared = .{
+        .gpa = init.gpa,
+    };
     _ = c.janet_init();
     defer c.janet_deinit();
 

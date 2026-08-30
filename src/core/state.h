@@ -210,6 +210,8 @@ struct JanetVM {
 };
 
 extern JANET_THREAD_LOCAL JanetVM janet_vm;
+void janet_init_zig(JanetVM *vm);
+void janet_deinit_zig(JanetVM *vm);
 
 #ifdef JANET_NET
 void janet_net_init(void);

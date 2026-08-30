@@ -72,7 +72,7 @@ const Deferral = struct {
     pub fn finish(self: Deferral, state: *State, ty: ObjectType) void {
         self.object.flags.type = ty;
 
-        const c_state = state.c_state;
+        const c_state = state.c;
         c_state.gc_next_collection += self.size;
         c_state.blocks_count += 1;
 

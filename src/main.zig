@@ -15,6 +15,9 @@ extern fn janet_line_deinit() callconv(.c) void;
 pub fn main(init: std.process.Init) !u8 {
     const argv = try init.minimal.args.toSlice(init.arena.allocator());
 
+    janet.runtime.state_shared = .{
+        .gpa = init.gpa,
+    };
     _ = c.janet_init();
 
     const replacements = c.janet_table(0);
