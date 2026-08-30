@@ -27,10 +27,10 @@ pub const ObjectType = enum(u8) {
     array_weak,
 };
 
-pub const Head = extern struct {
+pub const Object = extern struct {
     flags: Flags,
     data: extern union {
-        next: ?*Head,
+        next: ?*Object,
         refcount: std.atomic.Value(i32),
     },
 

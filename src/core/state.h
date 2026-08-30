@@ -92,6 +92,20 @@ struct JanetVM {
     /* Place for user data */
     void *user;
 
+    /* Garbage collection */
+    void *blocks;
+    void *weak_blocks;
+    size_t block_count;
+    size_t gc_interval;
+    size_t next_collection;
+    int gc_suspend;
+    int gc_mark_phase;
+
+    /* GC roots */
+    Janet *roots;
+    size_t root_count;
+    size_t root_capacity;
+
     /* Top level dynamic bindings */
     JanetTable *top_dyns;
 
@@ -133,20 +147,6 @@ struct JanetVM {
     uint32_t cache_count;
     uint32_t cache_deleted;
     uint8_t gensym_counter[8];
-
-    /* Garbage collection */
-    void *blocks;
-    void *weak_blocks;
-    size_t gc_interval;
-    size_t next_collection;
-    size_t block_count;
-    int gc_suspend;
-    int gc_mark_phase;
-
-    /* GC roots */
-    Janet *roots;
-    size_t root_count;
-    size_t root_capacity;
 
     /* Scratch memory */
     JanetScratch **scratch_mem;

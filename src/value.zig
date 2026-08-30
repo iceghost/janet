@@ -7,14 +7,14 @@ const builtin = @import("builtin");
 const janet = @import("janet");
 
 pub const Array = extern struct {
-    gc: janet.gc.Head,
+    gc: janet.gc.Object,
     count: u32,
     capacity: u32,
     data: [*]janet.Value,
 
     /// Same as `Array`, but with potentially negative counts and null data
     pub const Extern = extern struct {
-        gc: janet.gc.Head,
+        gc: janet.gc.Object,
         count: i32,
         capacity: i32,
         data: ?[*]janet.Value,
@@ -149,7 +149,7 @@ pub const Box = extern struct {
 };
 
 pub const Table = extern struct {
-    gc: janet.gc.Head,
+    gc: janet.gc.Object,
     count: u32,
     capacity: u32,
     count_deleted: u32,
@@ -157,7 +157,7 @@ pub const Table = extern struct {
     proto: ?*Table,
 
     const Extern = extern struct {
-        gc: janet.gc.Head,
+        gc: janet.gc.Object,
         count: i32,
         capacity: i32,
         count_deleted: i32,
