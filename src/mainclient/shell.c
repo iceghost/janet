@@ -41,6 +41,7 @@
 
 void janet_line_init();
 void janet_line_deinit();
+void janet_line_save_history(void);
 
 void janet_line_get(const char *p, JanetBuffer *buffer);
 Janet janet_line_getter(int32_t argc, Janet *argv);
@@ -121,10 +122,16 @@ static JANET_THREAD_LOCAL char *gbl_history_file = NULL;
 #if defined(JANET_SIMPLE_GETLINE)
 
 void janet_line_init() {
-    ;
+#ifdef JANET_PLAN9
+    setfcr(0);
+#endif
 }
 
 void janet_line_deinit() {
+    ;
+}
+
+void janet_line_save_history(void) {
     ;
 }
 
@@ -497,7 +504,7 @@ parsing_done:
     fclose(history_file);
 }
 
-static void savehistory(void) {
+void janet_line_save_history(void) {
     if (gbl_history_count < 1 || (gbl_history_file == NULL)) return;
     FILE *history_file = fopen(gbl_history_file, "wb");
     for (int i = 0; i < gbl_history_count; i++) {
@@ -980,7 +987,7 @@ static int line() {
             case 3:     /* ctrl-c */
                 clearlines();
                 norawmode();
-                savehistory();
+                janet_line_save_history();
 #ifdef _WIN32
                 ExitProcess(1);
 #else
@@ -1169,8 +1176,21 @@ static int line() {
     return 0;
 }
 
+static void clear_at_exit(void) {
+    if (!gbl_israwmode) {
+        clearlines();
+        norawmode();
+    }
+}
+
 void janet_line_init() {
-    ;
+#ifdef JANET_PLAN9
+    setfcr(0);
+#endif
+#ifdef _WIN32
+    setup_console_output();
+#endif
+    atexit(clear_at_exit);
 }
 
 void janet_line_deinit() {
@@ -1206,90 +1226,4 @@ void janet_line_get(const char *p, JanetBuffer *buffer) {
     replacehistory();
 }
 
-static void clear_at_exit(void) {
-    if (!gbl_israwmode) {
-        clearlines();
-        norawmode();
-    }
-}
-
 #endif
-
-/*
- * Entry
- */
-
-int main(int argc, char **argv) {
-    int i, status;
-    JanetArray *args;
-    JanetTable *env;
-
-#ifdef JANET_PLAN9
-    setfcr(0);
-#endif
-
-#ifdef _WIN32
-    setup_console_output();
-#endif
-
-#if !defined(JANET_SIMPLE_GETLINE)
-    atexit(clear_at_exit);
-#endif
-
-#if defined(JANET_PRF)
-    uint8_t hash_key[JANET_HASH_KEY_SIZE + 1] = {0};
-#ifdef JANET_REDUCED_OS
-    char *envvar = NULL;
-#else
-    char *envvar = getenv("JANET_HASHSEED");
-#endif
-    if (NULL != envvar) {
-        strncpy((char *) hash_key, envvar, sizeof(hash_key) - 1);
-        hash_key[JANET_HASH_KEY_SIZE] = '\0'; /* in case copy didn't get null byte */
-    } else if (janet_cryptorand(hash_key, JANET_HASH_KEY_SIZE) != 0) {
-        fputs("unable to initialize janet PRF hash function.\n", stderr);
-        return 1;
-    }
-    janet_init_hash_key(hash_key);
-#endif
-
-    /* Set up VM */
-    janet_init();
-
-    /* Replace original getline with new line getter */
-    JanetTable *replacements = janet_table(0);
-    janet_table_put(replacements, janet_csymbolv("getline"), janet_wrap_cfunction(janet_line_getter));
-    janet_line_init();
-
-    /* Get core env */
-    env = janet_core_env(replacements);
-
-    /* Create args tuple */
-    args = janet_array(argc);
-    for (i = 1; i < argc; i++)
-        janet_array_push(args, janet_cstringv(argv[i]));
-
-    /* Save current executable path to (dyn :executable) */
-    janet_table_put(env, janet_ckeywordv("executable"), janet_cstringv(argv[0]));
-
-    /* Run startup script */
-    Janet mainfun;
-    janet_resolve(env, janet_csymbol("cli-main"), &mainfun);
-    Janet mainargs[1] = { janet_wrap_array(args) };
-    JanetFiber *fiber = janet_fiber(janet_unwrap_function(mainfun), 64, 1, mainargs);
-    janet_gcroot(janet_wrap_fiber(fiber));
-    fiber->env = env;
-
-    /* Run the fiber in an event loop */
-    status = janet_loop_fiber(fiber);
-
-    /* Deinitialize vm */
-
-#if !defined(JANET_SIMPLE_GETLINE)
-    savehistory();
-#endif
-    janet_deinit();
-    janet_line_deinit();
-
-    return status;
-}
