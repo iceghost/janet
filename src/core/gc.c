@@ -691,6 +691,14 @@ void janet_clear_memory(void) {
         current = next;
     }
     janet_vm.blocks = NULL;
+    current = janet_vm.weak_blocks;
+    while (NULL != current) {
+        janet_deinit_block(current);
+        JanetGCObject *next = current->data.next;
+        janet_free(current);
+        current = next;
+    }
+    janet_vm.weak_blocks = NULL;
     janet_free_all_scratch();
     janet_free(janet_vm.scratch_mem);
 }
