@@ -24,6 +24,7 @@ comptime {
     _ = @import("include/janet.zig");
     _ = @import("core/array.zig");
     _ = @import("core/regalloc.zig");
+    _ = @import("core/tuple.zig");
     _ = @import("core/util.zig");
 
     if (!is_bootstrap) {

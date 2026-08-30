@@ -38,7 +38,7 @@ pub const Object = extern struct {
         refcount: std.atomic.Value(i32),
     },
 
-    const disabled: Object = .{
+    pub const disabled: Object = .{
         .flags = .{
             .type = .none,
         },

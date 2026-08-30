@@ -27,7 +27,9 @@ pub const CState = extern struct {
     root_capacity: usize,
 };
 
-pub const c_state = @extern(*CState, .{
-    .name = "janet_vm",
-    .is_thread_local = true,
-});
+pub fn c_state() *CState {
+    return @extern(*CState, .{
+        .name = "janet_vm",
+        .is_thread_local = true,
+    });
+}

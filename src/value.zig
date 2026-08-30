@@ -186,7 +186,7 @@ pub const Tuple = extern struct {
     data: [0]Value = .{},
 
     pub fn create_from_slice(s: *janet.runtime.State, values: []const Value) Allocator.Error!*Tuple {
-        const handle, const head, const elems = try janet.gc.create_deferred(s.gpa, Tuple, Value, values.len);
+        const handle, const head, const elems = try janet.gc.create_deferred(s.gpa, Tuple, Value, @intCast(values.len));
         defer handle.finish(s, .tuple);
 
         @memcpy(elems, values);
