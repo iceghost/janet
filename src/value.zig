@@ -1,4 +1,6 @@
 const std = @import("std");
+const mem = std.mem;
+const Allocator = mem.Allocator;
 const assert = std.debug.assert;
 const builtin = @import("builtin");
 
@@ -144,4 +146,26 @@ pub const Box = extern struct {
             return @as(usize, x.tagged.payload) << pointer_shift;
         }
     };
+};
+
+pub const Table = extern struct {
+    gc: janet.gc.Head,
+    count: u32,
+    capacity: u32,
+    count_deleted: u32,
+    data: [*][2]janet.Value,
+    proto: ?*Table,
+
+    const Extern = extern struct {
+        gc: janet.gc.Head,
+        count: i32,
+        capacity: i32,
+        count_deleted: i32,
+        data: ?[*][2]janet.Value,
+        proto: ?*Extern,
+    };
+
+    pub fn create(_: Allocator) *Table {
+        //
+    }
 };
