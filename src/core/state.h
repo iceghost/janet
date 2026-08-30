@@ -90,7 +90,7 @@ typedef struct {
 
 struct JanetVM {
     /* Place for user data */
-    void *user;
+    void* user;
 
     /* Garbage collection */
     void *blocks;
@@ -149,6 +149,7 @@ struct JanetVM {
     uint8_t gensym_counter[8];
 
     /* Scratch memory */
+    void *scratch_pointer;
     JanetScratch **scratch_mem;
     size_t scratch_cap;
     size_t scratch_len;

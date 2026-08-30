@@ -11,7 +11,6 @@ pub const State = struct {
 
 /// Partially specified
 pub const CState = extern struct {
-    /// In this Zig port, Janet VM user field is used to store Zig state
     userdata: *State,
 
     blocks: ?*janet.gc.Object,

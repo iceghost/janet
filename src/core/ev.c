@@ -3131,7 +3131,7 @@ static JanetEVGenericMessage janet_go_thread_subr(JanetEVGenericMessage args) {
                 janet_unmarshal(nextbytes, endbytes - nextbytes,
                                 JANET_MARSHAL_UNSAFE, NULL, &nextbytes);
             /* Hack - use a global variable to avoid longjmp clobber */
-            janet_vm.user = janet_unwrap_pointer(sup);
+            janet_vm.scratch_pointer = janet_unwrap_pointer(sup);
         }
 
         /* Set cfunction registry */
@@ -3180,14 +3180,14 @@ static JanetEVGenericMessage janet_go_thread_subr(JanetEVGenericMessage args) {
             if (NULL == fiber->env) fiber->env = janet_table(0);
             janet_table_put(fiber->env, janet_ckeywordv("task-id"), value);
         }
-        fiber->supervisor_channel = janet_vm.user;
+        fiber->supervisor_channel = janet_vm.scratch_pointer;
         janet_schedule(fiber, value);
         janet_loop();
         args.tag = JANET_EV_TCTAG_NIL;
         janet_restore(&tstate);
     } else {
         janet_restore(&tstate);
-        void *supervisor = janet_vm.user;
+        void *supervisor = janet_vm.scratch_pointer;
         if (NULL != supervisor) {
             /* Got a supervisor, write error there */
             Janet pair[] = {
