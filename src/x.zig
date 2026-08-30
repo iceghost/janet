@@ -4,6 +4,12 @@ const meta = std.meta;
 const Io = std.Io;
 
 pub const bit_set = @import("x/bit_set.zig");
+pub const array_list = @import("x/array_list.zig");
+
+test {
+    _ = bit_set;
+    _ = array_list;
+}
 
 pub const testing = struct {
     pub var exe_path: [:0]const u8 = undefined;
@@ -38,6 +44,6 @@ test "chop and recover memory head" {
     head.size = tail.len;
 
     try std.testing.expectEqual(@as(usize, 24), tail.len);
-    try std.testing.expectEqual(head, mem_recover_head(Head, tail));
-    try std.testing.expectEqual(tail.len, mem_recover_head(Head, tail).size);
+    try std.testing.expectEqual(head, mem_recover_head(Head, tail.ptr));
+    try std.testing.expectEqual(tail.len, mem_recover_head(Head, tail.ptr).size);
 }

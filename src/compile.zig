@@ -4,6 +4,7 @@ const mem = std.mem;
 
 const janet = @import("janet");
 const x = @import("x");
+const ThinArrayList = x.array_list.Thin;
 
 pub const SourceMapping = extern struct {
     line: i32,
@@ -49,20 +50,20 @@ pub const Scope = extern struct {
     name: [*:0]const u8,
     parent: ?*Scope,
     child: ?*Scope,
-    consts: ?[*]janet.Value,
-    syms: ?[*]SymPair,
-    defs: ?[*]*janet.c.JanetFuncDef,
+    consts: ThinArrayList(janet.Value),
+    syms: ThinArrayList(SymPair),
+    defs: ThinArrayList(*janet.c.JanetFuncDef),
     ra: Register.Allocator,
     ua: Register.Allocator,
-    envs: ?[*]EnvRef,
+    envs: ThinArrayList(EnvRef),
     bytecode_start: i32,
     flags: i32,
 };
 
 pub const State = extern struct {
     scope: ?*Scope,
-    buffer: ?[*]u32,
-    mapbuffer: ?[*]SourceMapping,
+    buffer: ThinArrayList(u32),
+    mapbuffer: ThinArrayList(SourceMapping),
     env: ?*janet.c.JanetTable,
     source: ?[*:0]const u8,
     result: CompileResult,

@@ -11,6 +11,18 @@ pub fn build(b: *Build) !void {
     const mod_x = b.createModule(.{
         .root_source_file = b.path("src/x.zig"),
     });
+    mod_x.addImport("x", mod_x);
+
+    const test_x = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/x.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_x.root_module.addImport("x", test_x.root_module);
+    const run_test_x = b.addRunArtifact(test_x);
+    step_test.dependOn(&run_test_x.step);
 
     const path_core_image = build_core_image(b, .{ .mod_x = mod_x });
 
