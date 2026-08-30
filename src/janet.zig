@@ -8,6 +8,7 @@ pub const bytecode = @import("bytecode.zig");
 pub const compile = @import("compile.zig");
 pub const gc = @import("gc.zig");
 pub const runtime = @import("runtime.zig");
+pub const State = runtime.State;
 pub const value = @import("value.zig");
 pub const Array = value.Array;
 pub const Value = value.Box;
