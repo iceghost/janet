@@ -6,6 +6,7 @@ const janet = @import("janet");
 
 pub const State = struct {
     gpa: Allocator,
+    c_state: *CState,
 };
 
 /// Partially specified

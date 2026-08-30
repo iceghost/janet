@@ -1,6 +1,10 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const mem = std.mem;
 const Allocator = mem.Allocator;
+
+const janet = @import("janet");
+const State = janet.runtime.State;
 const x = @import("x");
 
 pub const alignment: mem.Alignment = .of(std.c.max_align_t);
@@ -53,6 +57,46 @@ const AllocationHead = extern struct {
         return m[0 .. @sizeOf(AllocationHead) + self.size];
     }
 };
+
+const Deferral = struct {
+    object: *Object,
+    size: u32,
+
+    pub fn finish(self: Deferral, state: *State) void {
+        const c_state = state.c_state;
+        c_state.gc_next_collection += self.size;
+        c_state.blocks_count += 1;
+
+        switch (self.object.flags.type) {
+            .array_weak, .table_weakk, .table_weakv, .table_weakkv => {
+                self.object.data.next = c_state.blocks_weak;
+                c_state.blocks_weak = self.object;
+            },
+            else => {
+                self.object.data.next = c_state.blocks;
+                c_state.blocks = self.object;
+            },
+        }
+    }
+};
+
+pub fn create_deferred(
+    gpa: Allocator,
+    comptime Head: type,
+    comptime Elem: type,
+    count: u32,
+) Allocator.Error!struct { Deferral, *Head, []Elem } {
+    comptime assert(@sizeOf(Head) >= @sizeOf(Object));
+    comptime assert(@alignOf(Head) == @alignOf(Object));
+    comptime assert(@alignOf(Elem) <= @alignOf(Head));
+
+    const size = @sizeOf(Head) + @sizeOf(Elem) * count;
+    const allocation = try alloc(gpa, size);
+    const head, const rest = x.mem_chop_head(allocation, Head);
+    const obj: *Object = @ptrCast(head);
+    const body: []Elem = std.mem.bytesAsSlice(Elem, rest);
+    return .{ .{ .object = obj, .size = size }, head, body };
+}
 
 pub fn alloc(gpa: Allocator, size: usize) Allocator.Error![]align(alignment_size) u8 {
     const allocation_new = blk: {
