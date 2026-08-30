@@ -6,6 +6,7 @@ const janet = @import("janet");
 const x = @import("x");
 const ThinArrayList = x.array_list.Thin;
 
+/// Source mapping for a bytecode instruction.
 pub const SourceMapping = extern struct {
     line: i32,
     column: i32,
@@ -24,9 +25,12 @@ pub const Result = extern struct {
     };
 };
 
+/// A stack slot.
 pub const Slot = extern struct {
+    /// The slot's constant value, when `flags.constant` is set.
     constant: janet.Value,
     index: i32,
+    /// Zero for a local slot, or a positive number for an upvalue.
     envindex: i32,
     flags: Flags,
 
@@ -44,11 +48,13 @@ pub const Slot = extern struct {
     };
 };
 
+/// A symbol and slot pair.
 pub const SymPair = extern struct {
     slot: Slot,
     sym: ?[*:0]const u8,
     sym2: ?[*:0]const u8,
     keep: i32,
+    /// Whether this value has been used.
     referenced: i32,
     birth_pc: u32,
     death_pc: u32,
@@ -59,15 +65,30 @@ pub const EnvRef = extern struct {
     scope: *Scope,
 };
 
+/// A lexical scope during compilation
 pub const Scope = extern struct {
+    /// For debugging the compiler
     name: [*:0]const u8,
+    /// Scopes are doubly linked list.
     parent: ?*Scope,
+    /// Scopes are doubly linked list.
     child: ?*Scope,
+
+    /// Constants for this funcdef
     consts: ThinArrayList(janet.Value),
+    /// Map of symbols to slots. Use a simple linear scan for symbols
     syms: ThinArrayList(SymPair),
+    /// FuncDefs
     defs: ThinArrayList(*janet.c.JanetFuncDef),
+    /// Register allocator
     ra: Register.Allocator,
+    /// Upvalue allocator
     ua: Register.Allocator,
+    /// Referenced closure environments
+    ///
+    /// The values at each index correspond to which index to get the
+    /// environment from in the parent. The environment that corresponds to the
+    /// direct parent's stack will always have value 0
     envs: ThinArrayList(EnvRef),
     bytecode_start: i32,
     flags: Flags,
@@ -92,16 +113,25 @@ pub const Scope = extern struct {
     }
 };
 
+/// Compilation state
 pub const State = extern struct {
+    /// Pointer to current scope
     scope: *Scope,
     buffer: ThinArrayList(u32),
     mapbuffer: ThinArrayList(SourceMapping),
+    /// Hold the environment
     env: ?*janet.c.JanetTable,
+    /// Name of source to attach to generated functions
     source: ?[*:0]const u8,
+    /// The result of compilation
     result: Result,
+    /// Keep track of where we are in the source
     current_mapping: SourceMapping,
+    /// Prevent unbounded recursion
     recursion_guard: i32,
+    /// Collect linting result
     lints: ?*janet.Array.Extern,
+    /// Cached version of (dyn *redef*)
     is_redef: i32,
 
     const Extern = extern struct {
@@ -136,9 +166,11 @@ pub const State = extern struct {
     }
 };
 
+/// Options for compiling a single form.
 pub const Fopts = extern struct {
     compiler: *State,
     hint: Slot,
+    /// Accepted primitive types and form-compilation options.
     flags: Flags,
 
     pub const Flags = packed struct(u32) {
@@ -150,16 +182,19 @@ pub const Fopts = extern struct {
     };
 };
 
+/// Optimizer callbacks for built-in functions.
 pub const FunOptimizer = extern struct {
     can_optimize: *const fn (Fopts, ?[*]Slot) callconv(.c) i32,
     optimize: *const fn (Fopts, ?[*]Slot) callconv(.c) Slot,
 };
 
+/// A named special form and its compiler callback.
 pub const Special = extern struct {
     name: [*:0]const u8,
     compile: *const fn (Fopts, i32, ?[*]const janet.Value) callconv(.c) Slot,
 };
 
+/// Register index, including placeholders for temporary-register allocation.
 pub const Register = enum(u32) {
     temp_0 = 240,
     temp_1,
@@ -195,7 +230,9 @@ pub const Register = enum(u32) {
     //     temp_7,
     // };
 
+    /// A simple first-fit register allocator for the compiler.
     pub const Allocator = extern struct {
+        /// Tracks which register indices are allocated.
         bit_set: x.bit_set.Dynamic,
         /// The maximum allocated register so far.
         max: Register,
