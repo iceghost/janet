@@ -158,17 +158,73 @@ pub const Table = extern struct {
     data: [*][2]janet.Value,
     proto: ?*Table,
 
-    const Extern = extern struct {
+    pub const Extern = extern struct {
         gc: janet.gc.Object,
         count: i32,
         capacity: i32,
         count_deleted: i32,
         data: ?[*][2]janet.Value,
         proto: ?*Extern,
+
+        pub fn cast(self: *Extern) *Table {
+            assert(self.count >= 0);
+            assert(self.capacity >= 0);
+            assert(self.data != null);
+            return @ptrCast(self);
+        }
+
+        pub fn wrap(table: *Table) *Extern {
+            return @ptrCast(table);
+        }
     };
 
-    pub fn create(_: Allocator) *Table {
-        //
+    pub fn create_deferred(gpa: Allocator) Allocator.Error!struct { janet.gc.Deferral, *Table } {
+        const handle, const table, _ = try janet.gc.create_deferred(gpa, Table, u8, 0);
+        table.* = .{
+            .gc = .disabled,
+            .count = 0,
+            .capacity = 0,
+            .count_deleted = 0,
+            .data = undefined,
+            .proto = null,
+        };
+        return .{ handle, table };
+    }
+
+    pub fn reserve_total(self: *Table, gpa: Allocator, requested: u32) Allocator.Error!void {
+        var total = requested;
+        total |= total >> 1;
+        total |= total >> 2;
+        total |= total >> 4;
+        total |= total >> 8;
+        total |= total >> 16;
+        return self.reserve_total_precise(
+            gpa,
+            if (total == std.math.maxInt(u32)) total else total + 1,
+        );
+    }
+
+    pub fn reserve_total_precise(self: *Table, gpa: Allocator, total: u32) Allocator.Error!void {
+        if (total <= self.capacity) return;
+
+        const size = std.math.mul(usize, total, @sizeOf([2]Value)) catch return error.OutOfMemory;
+        const allocation = try janet.gc.alloc(gpa, size);
+        const entries: [*][2]Value = @ptrCast(allocation.ptr);
+        @memset(entries[0..total], .{ .nil, .nil });
+
+        const old_data = self.data;
+        const old_capacity = self.capacity;
+        self.data = entries;
+        self.capacity = total;
+        self.count = 0;
+        self.count_deleted = 0;
+
+        if (old_capacity > 0) {
+            for (old_data[0..old_capacity]) |entry| {
+                janet_table_put(.wrap(self), entry[0], entry[1]);
+            }
+            janet.gc.free(gpa, @ptrCast(old_data));
+        }
     }
 };
 
@@ -206,6 +262,7 @@ pub const Tuple = extern struct {
 };
 
 extern fn janet_hash(v: Value) callconv(.c) i32;
+extern fn janet_table_put(table: *Table.Extern, key: Value, value: Value) callconv(.c) void;
 
 pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));

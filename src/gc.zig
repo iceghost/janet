@@ -65,7 +65,7 @@ const AllocationHead = extern struct {
     }
 };
 
-const Deferral = struct {
+pub const Deferral = struct {
     object: *Object,
     size: u32,
 

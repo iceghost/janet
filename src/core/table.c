@@ -86,28 +86,6 @@ void janet_table_deinit(JanetTable *table) {
     }
 }
 
-/* Create a new table */
-
-JanetTable *janet_table(int32_t capacity) {
-    JanetTable *table = janet_gcalloc(JANET_MEMORY_TABLE, sizeof(JanetTable));
-    return janet_table_init_impl(table, capacity, 0);
-}
-
-JanetTable *janet_table_weakk(int32_t capacity) {
-    JanetTable *table = janet_gcalloc(JANET_MEMORY_TABLE_WEAKK, sizeof(JanetTable));
-    return janet_table_init_impl(table, capacity, 0);
-}
-
-JanetTable *janet_table_weakv(int32_t capacity) {
-    JanetTable *table = janet_gcalloc(JANET_MEMORY_TABLE_WEAKV, sizeof(JanetTable));
-    return janet_table_init_impl(table, capacity, 0);
-}
-
-JanetTable *janet_table_weakkv(int32_t capacity) {
-    JanetTable *table = janet_gcalloc(JANET_MEMORY_TABLE_WEAKKV, sizeof(JanetTable));
-    return janet_table_init_impl(table, capacity, 0);
-}
-
 /* Find the bucket that contains the given key. Will also return
  * bucket where key should go if not in the table. */
 JanetKV *janet_table_find(JanetTable *t, Janet key) {
