@@ -220,9 +220,9 @@ pub const String = extern struct {
     }
 
     /// `end()` and `handle.finish()` must be called afterwards
-    pub fn begin_deferred(rt: *janet.State, size: u32) Allocator.Error!struct { janet.gc.Deferral, *String, [:0]u8 } {
+    pub fn begin_deferred(rt: *janet.State, size: u32) Allocator.Error!struct { janet.gc.Handle, *String, [:0]u8 } {
         assert(size <= size_max);
-        const handle, const head, const data = try janet.gc.create_deferred(rt.gpa, String, u8, size + 1);
+        const handle, const head, const data = try janet.gc.create_deferred(rt, String, u8, size + 1);
         head.* = .{
             .gc = .disabled,
             .size = size,
@@ -243,7 +243,7 @@ pub const String = extern struct {
         const handle, const s, const data = try begin_deferred(rt, @intCast(bytes.len));
         @memcpy(data, bytes);
         s.end();
-        handle.finish(rt, .string);
+        handle.finish(.string);
         return s;
     }
 
@@ -308,7 +308,7 @@ pub const String = extern struct {
                 const handle, const s, const data = try String.begin_deferred(rt, @intCast(bs.len));
                 @memcpy(data, bs);
                 s.end();
-                handle.finish(rt, .symbol);
+                handle.finish(.symbol);
                 result.key_ptr.* = s;
                 return result;
             }
@@ -405,8 +405,8 @@ pub const Struct = extern struct {
         const capacity = std.math.ceilPowerOfTwo(u32, minimum) catch return error.OutOfMemory;
         if (capacity > std.math.maxInt(i32)) return error.OutOfMemory;
 
-        const handle, const head, const entries = try janet.gc.create_deferred(rt.gpa, Struct, Pair, capacity);
-        defer handle.finish(rt, .@"struct");
+        const handle, const head, const entries = try janet.gc.create_deferred(rt, Struct, Pair, capacity);
+        defer handle.finish(.@"struct");
 
         head.* = .{
             .gc = .disabled,
@@ -449,8 +449,8 @@ pub const Table = extern struct {
         }
     };
 
-    pub fn create_deferred(gpa: Allocator) Allocator.Error!struct { janet.gc.Deferral, *Table } {
-        const handle, const table, _ = try janet.gc.create_deferred(gpa, Table, u8, 0);
+    pub fn create_deferred(rt: *janet.State) Allocator.Error!struct { janet.gc.Handle, *Table } {
+        const handle, const table, _ = try janet.gc.create_deferred(rt, Table, u8, 0);
         table.* = .{
             .gc = .disabled,
             .count = 0,
@@ -529,8 +529,8 @@ pub const Tuple = extern struct {
     data: [0]Value = .{},
 
     pub fn create_from_slice(rt: *janet.State, values: []const Value) Allocator.Error!*Tuple {
-        const handle, const head, const elems = try janet.gc.create_deferred(rt.gpa, Tuple, Value, @intCast(values.len));
-        defer handle.finish(rt, .tuple);
+        const handle, const head, const elems = try janet.gc.create_deferred(rt, Tuple, Value, @intCast(values.len));
+        defer handle.finish(.tuple);
 
         @memcpy(elems, values);
 

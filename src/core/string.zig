@@ -11,7 +11,7 @@ comptime {
 
 fn begin(size: i32) callconv(.c) String.Extern.Pointer {
     const handle, const head, _ = String.begin_deferred(.get(), @intCast(size)) catch janet.oom();
-    handle.finish(.get(), .string);
+    handle.finish(.string);
     return .wrap(head);
 }
 

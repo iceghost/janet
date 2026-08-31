@@ -70,14 +70,15 @@ const AllocationHead = extern struct {
     }
 };
 
-pub const Deferral = struct {
+pub const Handle = struct {
+    rt: *State,
     object: *Object,
     size: u32,
 
-    pub fn finish(self: Deferral, state: *State, ty: ObjectType) void {
+    pub fn finish(self: Handle, ty: ObjectType) void {
         self.object.flags.type = ty;
 
-        const c_state = state.c;
+        const c_state = self.rt.c;
         c_state.gc_next_collection += self.size;
         c_state.blocks_count += 1;
 
@@ -95,21 +96,21 @@ pub const Deferral = struct {
 };
 
 pub fn create_deferred(
-    gpa: Allocator,
+    rt: *State,
     comptime Head: type,
     comptime Elem: type,
     count: u32,
-) Allocator.Error!struct { Deferral, *Head, []Elem } {
+) Allocator.Error!struct { Handle, *Head, []Elem } {
     comptime assert(@sizeOf(Head) >= @sizeOf(Object));
     comptime assert(@alignOf(Head) == @alignOf(Object));
     comptime assert(@alignOf(Elem) <= @alignOf(Head));
 
     const size = @sizeOf(Head) + @sizeOf(Elem) * count;
-    const allocation = try alloc(gpa, size);
+    const allocation = try alloc(rt.gpa, size);
     const head, const rest = x.mem_chop_head(allocation, Head);
     const obj: *Object = @ptrCast(head);
     const body: []Elem = std.mem.bytesAsSlice(Elem, rest);
-    return .{ .{ .object = obj, .size = size }, head, body };
+    return .{ .{ .rt = rt, .object = obj, .size = size }, head, body };
 }
 
 pub fn alloc(gpa: Allocator, size: usize) Allocator.Error![]align(alignment_size) u8 {
