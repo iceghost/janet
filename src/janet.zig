@@ -28,6 +28,7 @@ comptime {
     _ = @import("core/state.zig");
     _ = @import("core/string.zig");
     _ = @import("core/struct.zig");
+    _ = @import("core/symcache.zig");
     _ = @import("core/table.zig");
     _ = @import("core/tuple.zig");
     _ = @import("core/util.zig");

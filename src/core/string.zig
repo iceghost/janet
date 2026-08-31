@@ -10,12 +10,14 @@ comptime {
 }
 
 fn begin(size: i32) callconv(.c) String.Extern.Pointer {
-    const head, _ = String.begin(.get(), @intCast(size)) catch janet.oom();
+    const handle, const head, _ = String.begin_deferred(.get(), @intCast(size)) catch janet.oom();
+    handle.finish(.get(), .string);
     return .wrap(head);
 }
 
 fn end(string: String.Extern.Pointer) callconv(.c) String.Extern.Pointer {
-    string.cast_head().end();
+    const head = string.cast_head();
+    head.end();
     return string;
 }
 

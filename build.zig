@@ -139,7 +139,6 @@ fn add_cjanet(b: *std.Build, mod: *std.Build.Module, options: struct {
         "src/core/string.c",
         "src/core/strtod.c",
         "src/core/struct.c",
-        "src/core/symcache.c",
         "src/core/table.c",
         "src/core/tuple.c",
         "src/core/util.c",

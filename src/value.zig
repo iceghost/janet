@@ -82,6 +82,18 @@ pub const Box = extern struct {
         }
     }
 
+    pub fn wrap_keyword(s: *String) Box {
+        return .{ .repr = .box_any(.keyword, s) };
+    }
+
+    pub fn wrap_string(s: *String) Box {
+        return .{ .repr = .box_any(.string, s) };
+    }
+
+    pub fn wrap_symbol(s: *String) Box {
+        return .{ .repr = .box_any(.symbol, s) };
+    }
+
     pub const representation: union(enum) {
         unbox,
         nanbox32,
@@ -207,17 +219,17 @@ pub const String = extern struct {
         return data[0..s.size :0];
     }
 
-    pub fn begin(rt: *janet.State, size: u32) Allocator.Error!struct { *String, [:0]u8 } {
+    /// `end()` and `handle.finish()` must be called afterwards
+    pub fn begin_deferred(rt: *janet.State, size: u32) Allocator.Error!struct { janet.gc.Deferral, *String, [:0]u8 } {
         assert(size <= size_max);
         const handle, const head, const data = try janet.gc.create_deferred(rt.gpa, String, u8, size + 1);
-        defer handle.finish(rt, .string);
         head.* = .{
             .gc = .disabled,
             .size = size,
             .hash = undefined,
         };
         data[size] = 0;
-        return .{ head, data[0..size :0] };
+        return .{ handle, head, data[0..size :0] };
     }
 
     pub fn end(s: *String) void {
@@ -228,11 +240,126 @@ pub const String = extern struct {
     }
 
     pub fn from_bytes(rt: *janet.State, bytes: []const u8) Allocator.Error!*String {
-        const s, const data = try begin(rt, @intCast(bytes.len));
+        const handle, const s, const data = try begin_deferred(rt, @intCast(bytes.len));
         @memcpy(data, bytes);
         s.end();
+        handle.finish(rt, .string);
         return s;
     }
+
+    pub fn intern(rt: *janet.State, bytes: []const u8) Allocator.Error!*String {
+        return rt.symbol_pool.intern(rt, bytes);
+    }
+
+    pub const Pool = struct {
+        map: Map,
+
+        pub const empty: Pool = .{
+            .map = .empty,
+        };
+
+        const Map = std.ArrayHashMapUnmanaged(*String, void, Context, false);
+
+        const Context = struct {
+            pub fn hash(_: Context, s: *String) u32 {
+                return s.hash;
+            }
+
+            pub fn eql(_: Context, a: *String, b: *String, _: usize) bool {
+                return a == b;
+            }
+        };
+
+        const Adapter = struct {
+            hash_value: u32,
+
+            pub fn hash(ctx: @This(), _: []const u8) u32 {
+                return ctx.hash_value;
+            }
+
+            pub fn eql(ctx: @This(), lookup: []const u8, s: *String, _: usize) bool {
+                if (ctx.hash_value != s.hash) return false;
+                return mem.eql(u8, s.slice(), lookup);
+            }
+        };
+
+        pub fn init(self: *Pool, allocator: Allocator) error{OutOfMemory}!void {
+            try self.map.ensureTotalCapacityContext(allocator, 1024, .{});
+        }
+
+        pub fn deinit(self: *Pool, allocator: Allocator) void {
+            self.map.deinit(allocator);
+            self.* = .empty;
+        }
+
+        pub fn intern(self: *Pool, rt: *janet.State, bs: []const u8) error{OutOfMemory}!*String {
+            const gop = try self.get_or_put(rt, bs);
+            return gop.key_ptr.*;
+        }
+
+        fn get_or_put(self: *Pool, rt: *janet.State, bs: []const u8) error{OutOfMemory}!Map.GetOrPutResult {
+            const hash_value: u32 = @truncate(std.hash_map.hashString(bs));
+
+            const result = try self.map.getOrPutAdapted(rt.gpa, bs, Adapter{ .hash_value = hash_value });
+            if (result.found_existing) {
+                return result;
+            } else {
+                errdefer self.map.swapRemoveAtContext(result.index, Context{});
+                const handle, const s, const data = try String.begin_deferred(rt, @intCast(bs.len));
+                @memcpy(data, bs);
+                s.end();
+                handle.finish(rt, .symbol);
+                result.key_ptr.* = s;
+                return result;
+            }
+        }
+
+        pub fn remove(self: *Pool, s: *String) void {
+            _ = self.map.swapRemoveContext(s, Context{});
+        }
+    };
+
+    /// (gensym) string generator
+    pub const Generator = struct {
+        /// Generated symbols have the format _XXXXXX, where X is a base64 digit.
+        counter: [7:0]u8,
+
+        pub const init: Generator = .{
+            .counter = "_000000".*,
+        };
+
+        // Increment the gensym buffer.
+        fn increment(self: *Generator) void {
+            var i: usize = self.counter.len - 1;
+            carry: switch (self.counter[i]) {
+                '9' => self.counter[i] = 'a',
+                'z' => self.counter[i] = 'A',
+                'Z' => {
+                    self.counter[i] = '0';
+                    i -= 1;
+                    if (i == 0) @panic("(gensym) pool exhausted");
+                    continue :carry self.counter[i];
+                },
+                else => self.counter[i] += 1,
+            }
+        }
+
+        pub fn reset(self: *Generator) void {
+            self.* = .init;
+        }
+
+        /// Generate a unique symbol for (gensym)
+        pub fn next(self: *Generator, rt: *janet.State) Allocator.Error!*String {
+            // There are 64^6 possible suffixes,
+            // which is enough for resolving collisions.
+            while (true) {
+                const bs = self.counter[0..];
+                const result = try rt.symbol_pool.get_or_put(rt, bs);
+                if (!result.found_existing) return result.key_ptr.*;
+                self.increment();
+            }
+        }
+    };
 };
 
 pub const Pair = extern struct {

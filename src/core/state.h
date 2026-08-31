@@ -136,13 +136,6 @@ struct JanetVM {
      * We need this to look up the constructors when unmarshalling. */
     JanetTable *abstract_registry;
 
-    /* Immutable value cache */
-    const uint8_t **cache;
-    uint32_t cache_capacity;
-    uint32_t cache_count;
-    uint32_t cache_deleted;
-    uint8_t gensym_counter[8];
-
     /* Scratch memory */
     void *scratch_pointer;
 

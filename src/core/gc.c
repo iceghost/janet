@@ -528,7 +528,7 @@ void *janet_gcalloc(enum JanetMemoryType type, size_t size) {
     JanetGCObject *mem;
 
     /* Make sure everything is inited */
-    janet_assert(NULL != janet_vm.cache, "please initialize janet before use");
+    janet_assert(NULL != janet_vm.user, "please initialize janet before use");
     mem = janet_malloc(size);
 
     /* Check for bad malloc */

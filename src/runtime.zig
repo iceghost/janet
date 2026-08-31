@@ -10,6 +10,9 @@ pub const State = struct {
     arena_per_gc: std.heap.ArenaAllocator.State,
     c: *C,
 
+    symbol_pool: janet.value.String.Pool,
+    symbol_generator: janet.value.String.Generator,
+
     /// Global state shared by all Janet VM instances
     pub const Shared = struct {
         gpa: Allocator,
@@ -38,6 +41,8 @@ pub const State = struct {
                 .gpa = shared.gpa,
                 .arena_per_gc = .init,
                 .c = self,
+                .symbol_pool = .empty,
+                .symbol_generator = .init,
             };
             self.zig = s;
         }
