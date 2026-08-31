@@ -18,13 +18,11 @@ extern fn janet_line_getter(argc: i32, argv: [*c]Value) callconv(.c) Value;
 extern fn janet_line_init() callconv(.c) void;
 extern fn janet_line_save_history() callconv(.c) void;
 extern fn janet_line_deinit() callconv(.c) void;
-extern fn janet_table(capacity: i32) callconv(.c) *Table.Extern;
-extern fn janet_table_put(table: *Table.Extern, key: Value, value: Value) callconv(.c) void;
 extern fn janet_wrap_cfunction(cfun: CFunction) callconv(.c) Value;
-extern fn janet_core_env(replacements: *Table.Extern) callconv(.c) *Table.Extern;
+extern fn janet_core_env(replacements: *Table) callconv(.c) *Table;
 extern fn janet_array(capacity: i32) callconv(.c) *Array.Extern;
 extern fn janet_array_push(array: *Array.Extern, value: Value) callconv(.c) void;
-extern fn janet_resolve(env: *Table.Extern, symbol: String.Extern.Pointer, out: *Value) callconv(.c) c.JanetBindingType;
+extern fn janet_resolve(env: *Table, symbol: String.Extern.Pointer, out: *Value) callconv(.c) c.JanetBindingType;
 extern fn janet_wrap_array(array: *Array.Extern) callconv(.c) Value;
 extern fn janet_unwrap_function(value: Value) callconv(.c) *c.JanetFunction;
 extern fn janet_fiber(callee: *c.JanetFunction, capacity: i32, argc: i32, argv: [*]const Value) callconv(.c) *c.JanetFiber;
@@ -40,12 +38,15 @@ pub fn main(init: std.process.Init) !u8 {
     _ = c.janet_init();
 
     const rt = janet.Runtime.default();
-    const replacements = janet_table(0);
-    janet_table_put(
-        replacements,
-        .wrap_symbol(try .intern(rt, "getline")),
+
+    const replacements: *janet.value.Table = try .create(rt);
+
+    try replacements.put(
+        rt,
+        try .symbol(rt, "getline"),
         janet_wrap_cfunction(&janet_line_getter),
     );
+
     janet_line_init();
 
     const env = janet_core_env(replacements);
@@ -54,10 +55,10 @@ pub fn main(init: std.process.Init) !u8 {
         janet_array_push(args, .wrap_string(try .from_bytes(rt, arg)));
     }
 
-    janet_table_put(
-        env,
-        .wrap_keyword(try .intern(rt, "executable")),
-        .wrap_string(try .from_bytes(rt, argv[0])),
+    try env.put(
+        rt,
+        try .keyword(rt, "executable"),
+        try .string(rt, argv[0]),
     );
 
     var main_function: Value = undefined;

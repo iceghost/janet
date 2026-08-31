@@ -106,6 +106,18 @@ pub const Box = extern struct {
         return .{ .repr = .box_any(.symbol, String.Extern.Pointer.wrap(s).ptr) };
     }
 
+    pub fn symbol(rt: *janet.Runtime, s: []const u8) Allocator.Error!Box {
+        return .wrap_symbol(try .intern(rt, s));
+    }
+
+    pub fn keyword(rt: *janet.Runtime, s: []const u8) Allocator.Error!Box {
+        return .wrap_keyword(try .intern(rt, s));
+    }
+
+    pub fn string(rt: *janet.Runtime, s: []const u8) Allocator.Error!Box {
+        return .wrap_string(try .from_bytes(rt, s));
+    }
+
     pub const representation: union(enum) {
         unbox,
         nanbox32,
@@ -719,6 +731,13 @@ pub const Table = extern struct {
         const handle, const table, _ = try janet.gc.create_deferred(rt, Table, u8, 0);
         table.* = .empty;
         return .{ handle, table };
+    }
+
+    pub fn create(rt: *janet.Runtime) Allocator.Error!*Table {
+        const handle, const table, _ = try janet.gc.create_deferred(rt, Table, u8, 0);
+        defer handle.finish(.table);
+        table.* = .empty;
+        return table;
     }
 
     pub fn clear_and_free(self: *Table, rt: *janet.Runtime) void {
