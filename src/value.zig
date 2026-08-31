@@ -200,6 +200,13 @@ pub const String = extern struct {
         return ptr[0 .. @sizeOf(String) + s.size + 1];
     }
 
+    /// Return the string data slice
+    pub fn slice(s: *String) [:0]const u8 {
+        const m = s.allocation();
+        _, const data = x.mem_chop_head(m, String);
+        return data[0..s.size :0];
+    }
+
     pub fn begin(rt: *janet.State, size: u32) Allocator.Error!struct { *String, [:0]u8 } {
         assert(size <= size_max);
         const handle, const head, const data = try janet.gc.create_deferred(rt.gpa, String, u8, size + 1);
