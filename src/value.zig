@@ -265,14 +265,14 @@ pub const Struct = extern struct {
         };
     };
 
-    pub fn begin(s: *janet.State, count: u32) Allocator.Error!*Struct {
+    pub fn begin(rt: *janet.State, count: u32) Allocator.Error!*Struct {
         const doubled = std.math.mul(u32, count, 2) catch return error.OutOfMemory;
         const minimum = std.math.add(u32, doubled, 1) catch return error.OutOfMemory;
         const capacity = std.math.ceilPowerOfTwo(u32, minimum) catch return error.OutOfMemory;
         if (capacity > std.math.maxInt(i32)) return error.OutOfMemory;
 
-        const handle, const head, const entries = try janet.gc.create_deferred(s.gpa, Struct, Pair, capacity);
-        defer handle.finish(s, .@"struct");
+        const handle, const head, const entries = try janet.gc.create_deferred(rt.gpa, Struct, Pair, capacity);
+        defer handle.finish(rt, .@"struct");
 
         head.* = .{
             .gc = .disabled,
@@ -394,9 +394,9 @@ pub const Tuple = extern struct {
     column: i32,
     data: [0]Value = .{},
 
-    pub fn create_from_slice(s: *janet.State, values: []const Value) Allocator.Error!*Tuple {
-        const handle, const head, const elems = try janet.gc.create_deferred(s.gpa, Tuple, Value, @intCast(values.len));
-        defer handle.finish(s, .tuple);
+    pub fn create_from_slice(rt: *janet.State, values: []const Value) Allocator.Error!*Tuple {
+        const handle, const head, const elems = try janet.gc.create_deferred(rt.gpa, Tuple, Value, @intCast(values.len));
+        defer handle.finish(rt, .tuple);
 
         @memcpy(elems, values);
 
