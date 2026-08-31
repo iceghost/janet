@@ -478,17 +478,14 @@ pub const Table = extern struct {
     }
 
     pub fn clear_and_free(self: *Table, rt: *janet.Runtime) void {
+        var scratch = rt.arena_per_gc.promote(rt.gpa);
+        defer rt.arena_per_gc = scratch.state;
+
         const flags = self.gc.flags_typed(Flags);
-        // remove this when gc.free and stuff is gone for good
-        if (self.capacity > 0) {
-            if (flags.stack) {
-                var scratch = rt.arena_per_gc.promote(rt.gpa);
-                defer rt.arena_per_gc = scratch.state;
-                janet.gc.free(scratch.allocator(), @ptrCast(self.data));
-            } else {
-                janet.gc.free(rt.gpa, @ptrCast(self.data));
-            }
-        }
+        const allocator = if (flags.stack) scratch.allocator() else rt.gpa;
+
+        allocator.free(self.data[0..self.capacity]);
+
         const gc = self.gc;
         self.* = .empty;
         self.gc = gc;
@@ -506,8 +503,7 @@ pub const Table = extern struct {
         const flags = self.gc.flags_typed(Flags);
         const allocator = if (flags.stack) scratch.allocator() else rt.gpa;
 
-        const size = std.math.mul(usize, total, @sizeOf(Pair)) catch return error.OutOfMemory;
-        const allocation = try janet.gc.alloc(allocator, size);
+        const allocation = try allocator.alloc(Pair, total);
         const entries: [*]Pair = @ptrCast(allocation.ptr);
         @memset(entries[0..total], .{ .key = .nil, .val = .nil });
 
@@ -517,14 +513,12 @@ pub const Table = extern struct {
         self.capacity = total;
         self.count_deleted = 0;
 
-        if (old_capacity > 0) {
-            for (old_data[0..old_capacity]) |entry| {
-                if (!entry.key.checktype(.nil)) {
-                    janet_table_find(.wrap(self), entry.key).?.* = entry;
-                }
+        for (old_data[0..old_capacity]) |entry| {
+            if (!entry.key.checktype(.nil)) {
+                janet_table_find(.wrap(self), entry.key).?.* = entry;
             }
-            janet.gc.free(allocator, @ptrCast(old_data));
         }
+        allocator.free(old_data[0..old_capacity]);
     }
 
     fn grow_capacity(count: u32) u32 {
