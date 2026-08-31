@@ -83,15 +83,15 @@ pub const Box = extern struct {
     }
 
     pub fn wrap_keyword(s: *String) Box {
-        return .{ .repr = .box_any(.keyword, s) };
+        return .{ .repr = .box_any(.keyword, String.Extern.Pointer.wrap(s).ptr) };
     }
 
     pub fn wrap_string(s: *String) Box {
-        return .{ .repr = .box_any(.string, s) };
+        return .{ .repr = .box_any(.string, String.Extern.Pointer.wrap(s).ptr) };
     }
 
     pub fn wrap_symbol(s: *String) Box {
-        return .{ .repr = .box_any(.symbol, s) };
+        return .{ .repr = .box_any(.symbol, String.Extern.Pointer.wrap(s).ptr) };
     }
 
     pub const representation: union(enum) {
