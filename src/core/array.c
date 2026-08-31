@@ -30,97 +30,7 @@
 
 #include <string.h>
 
-static void janet_array_impl(JanetArray *array, int32_t capacity) {
-    Janet *data = NULL;
-    if (capacity > 0) {
-        janet_vm.next_collection += capacity * sizeof(Janet);
-        data = (Janet *) array_allocate(sizeof(Janet), capacity);
-        if (NULL == data) {
-            JANET_OUT_OF_MEMORY;
-        }
-    }
-    array->count = 0;
-    array->capacity = capacity;
-    array->data = data;
-}
-
-/* Creates a new array */
-JanetArray *janet_array(int32_t capacity) {
-    JanetArray *array = janet_gcalloc(JANET_MEMORY_ARRAY, sizeof(JanetArray));
-    janet_array_impl(array, capacity);
-    return array;
-}
-
-/* Creates a new array with weak references */
-JanetArray *janet_array_weak(int32_t capacity) {
-    JanetArray *array = janet_gcalloc(JANET_MEMORY_ARRAY_WEAK, sizeof(JanetArray));
-    janet_array_impl(array, capacity);
-    return array;
-}
-
-/* Creates a new array from n elements. */
-JanetArray *janet_array_n(const Janet *elements, int32_t n) {
-    JanetArray *array = janet_gcalloc(JANET_MEMORY_ARRAY, sizeof(JanetArray));
-    array->capacity = n;
-    array->count = n;
-    array->data = array_allocate(sizeof(Janet), (size_t) n);
-    if (!array->data) {
-        JANET_OUT_OF_MEMORY;
-    }
-    safe_memcpy(array->data, elements, sizeof(Janet) * n);
-    return array;
-}
-
-/* Ensure the array has enough capacity for elements */
-void janet_array_ensure(JanetArray *array, int32_t capacity, int32_t growth) {
-    Janet *newData;
-    Janet *old = array->data;
-    if (capacity <= array->capacity) return;
-    int64_t new_capacity = ((int64_t) capacity) * growth;
-    if (new_capacity > INT32_MAX) new_capacity = INT32_MAX;
-    capacity = (int32_t) new_capacity;
-    newData = janet_realloc(old, capacity * sizeof(Janet));
-    if (NULL == newData) {
-        JANET_OUT_OF_MEMORY;
-    }
-    janet_vm.next_collection += (capacity - array->capacity) * sizeof(Janet);
-    array->data = newData;
-    array->capacity = capacity;
-}
-
-/* Set the count of an array. Extend with nil if needed. */
-void janet_array_setcount(JanetArray *array, int32_t count) {
-    if (count < 0)
-        return;
-    if (count > array->count) {
-        int32_t i;
-        janet_array_ensure(array, count, 1);
-        for (i = array->count; i < count; i++) {
-            array->data[i] = janet_wrap_nil();
-        }
-    }
-    array->count = count;
-}
-
-/* Push a value to the top of the array */
-void janet_array_push(JanetArray *array, Janet x) {
-    if (array->count == INT32_MAX) {
-        janet_panic("array overflow");
-    }
-    int32_t newcount = array->count + 1;
-    janet_array_ensure(array, newcount, 2);
-    array->data[array->count] = x;
-    array->count = newcount;
-}
-
-/* Look at the last value in the array */
-Janet janet_array_peek(JanetArray *array) {
-    if (array->count) {
-        return array->data[array->count - 1];
-    } else {
-        return janet_wrap_nil();
-    }
-}
+void janet_array_trim(JanetArray *array);
 
 /* C Functions */
 
@@ -357,20 +267,7 @@ JANET_CORE_FN(cfun_array_trim,
               "Set the backing capacity of an array to its current length. Returns the modified array.") {
     janet_fixarity(argc, 1);
     JanetArray *array = janet_getarray(argv, 0);
-    if (array->count) {
-        if (array->count < array->capacity) {
-            Janet *newData = janet_realloc(array->data, array->count * sizeof(Janet));
-            if (NULL == newData) {
-                JANET_OUT_OF_MEMORY;
-            }
-            array->data = newData;
-            array->capacity = array->count;
-        }
-    } else {
-        array->capacity = 0;
-        janet_free(array->data);
-        array->data = NULL;
-    }
+    janet_array_trim(array);
     return argv[0];
 }
 

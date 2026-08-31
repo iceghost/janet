@@ -323,7 +323,7 @@ static void janet_deinit_block(JanetGCObject *mem) {
             break;
         case JANET_MEMORY_ARRAY:
         case JANET_MEMORY_ARRAY_WEAK:
-            janet_free(((JanetArray *) mem)->data);
+            janet_array_deinit((JanetArray *) mem);
             break;
         case JANET_MEMORY_TABLE:
         case JANET_MEMORY_TABLE_WEAKK:

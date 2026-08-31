@@ -19,6 +19,15 @@ pub const Array = extern struct {
     capacity: u32,
     data: [*]janet.Value,
 
+    pub const empty: Array = .{
+        .gc = .disabled,
+        .count = 0,
+        .capacity = 0,
+        .data = &.{},
+    };
+
+    pub const count_max = std.math.maxInt(i32);
+
     /// Same as `Array`, but with potentially negative counts and null data
     pub const Extern = extern struct {
         gc: janet.gc.Object,
@@ -38,6 +47,66 @@ pub const Array = extern struct {
         }
     };
 
+    pub fn create(rt: *janet.Runtime, capacity: u32, object_type: janet.gc.ObjectType) Allocator.Error!*Array {
+        const handle, const array, _ = try janet.gc.create_deferred(rt, Array, u8, 0);
+        errdefer handle.destroy();
+
+        const data = try rt.gpa.alloc(janet.Value, capacity);
+        array.* = .{
+            .gc = .disabled,
+            .count = 0,
+            .capacity = capacity,
+            .data = data.ptr,
+        };
+        rt.c.gc_next_collection += @as(usize, capacity) * @sizeOf(janet.Value);
+        handle.finish(object_type);
+        return array;
+    }
+
+    pub fn create_from(rt: *janet.Runtime, elements: []const janet.Value) Allocator.Error!*Array {
+        const array = try create(rt, @intCast(elements.len), .array);
+        @memcpy(array.data[0..elements.len], elements);
+        array.count = @intCast(elements.len);
+        return array;
+    }
+
+    pub fn deinit(self: *Array, rt: *janet.Runtime) void {
+        rt.gpa.free(self.data[0..self.capacity]);
+        const gc = self.gc;
+        self.* = .empty;
+        self.gc = gc;
+    }
+
+    pub fn ensure(self: *Array, rt: *janet.Runtime, requested: u32, growth: u32) Allocator.Error!void {
+        if (requested <= self.capacity) return;
+        assert(growth != 0);
+
+        const capacity = @as(u64, requested) * growth;
+        assert(capacity <= count_max);
+        const old_capacity = self.capacity;
+        const allocation = try rt.gpa.realloc(self.data[0..old_capacity], @intCast(capacity));
+
+        self.data = allocation.ptr;
+        self.capacity = @intCast(capacity);
+        rt.c.gc_next_collection += (capacity - old_capacity) * @sizeOf(janet.Value);
+    }
+
+    pub fn set_count(self: *Array, rt: *janet.Runtime, count: u32) Allocator.Error!void {
+        if (count > self.count) {
+            try self.ensure(rt, count, 1);
+            @memset(self.data[self.count..count], .nil);
+        }
+        self.count = count;
+    }
+
+    pub fn push(self: *Array, rt: *janet.Runtime, value: janet.Value) Allocator.Error!void {
+        assert(self.count < count_max);
+        const new_count = self.count + 1;
+        try self.ensure(rt, new_count, 2);
+        self.data[self.count] = value;
+        self.count = new_count;
+    }
+
     /// Pop a value from the top of the array
     pub fn pop(self: *Array) janet.Value {
         if (self.count > 0) {
@@ -46,6 +115,25 @@ pub const Array = extern struct {
         } else {
             return .nil;
         }
+    }
+
+    pub fn peek(self: *const Array) janet.Value {
+        return if (self.count == 0) .nil else self.data[self.count - 1];
+    }
+
+    pub fn trim(self: *Array, rt: *janet.Runtime) Allocator.Error!void {
+        if (self.count == self.capacity) return;
+        if (self.count == 0) {
+            rt.gpa.free(self.data[0..self.capacity]);
+            const gc = self.gc;
+            self.* = .empty;
+            self.gc = gc;
+            return;
+        }
+
+        const allocation = try rt.gpa.realloc(self.data[0..self.capacity], self.count);
+        self.data = allocation.ptr;
+        self.capacity = self.count;
     }
 };
 
