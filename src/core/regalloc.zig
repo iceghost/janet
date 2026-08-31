@@ -8,10 +8,10 @@ const RegisterAllocator = janet.compile.Register.Allocator;
 comptime {
     @export(&init, .{ .name = "janetc_regalloc_init" });
     @export(&deinit, .{ .name = "janetc_regalloc_deinit" });
-    @export(&alloc, .{ .name = "janetc_regalloc_1" });
+    @export(&@"1", .{ .name = "janetc_regalloc_1" });
     @export(&free, .{ .name = "janetc_regalloc_free" });
     @export(&temp, .{ .name = "janetc_regalloc_temp" });
-    @export(&free_temp, .{ .name = "janetc_regalloc_freetemp" });
+    @export(&freetemp, .{ .name = "janetc_regalloc_freetemp" });
     @export(&clone, .{ .name = "janetc_regalloc_clone" });
     @export(&reserve, .{ .name = "janetc_regalloc_reserve" });
     @export(&touch, .{ .name = "janetc_regalloc_touch" });
@@ -26,7 +26,7 @@ fn deinit(registers: *RegisterAllocator) callconv(.c) void {
     registers.deinit(allocator);
 }
 
-fn alloc(registers: *RegisterAllocator) callconv(.c) i32 {
+fn @"1"(registers: *RegisterAllocator) callconv(.c) i32 {
     const reg = registers.alloc(allocator) catch janet.oom();
     return @bitCast(@intFromEnum(reg));
 }
@@ -40,7 +40,7 @@ fn temp(registers: *RegisterAllocator, nth: c_int) callconv(.c) i32 {
     return @bitCast(@intFromEnum(reg));
 }
 
-fn free_temp(registers: *RegisterAllocator, reg: i32, nth: c_int) callconv(.c) void {
+fn freetemp(registers: *RegisterAllocator, reg: i32, nth: c_int) callconv(.c) void {
     const register: Register = @enumFromInt(@as(u32, @bitCast(reg)));
     registers.temp_free(register, @enumFromInt(nth));
 }

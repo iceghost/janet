@@ -31,10 +31,8 @@ pub const State = struct {
         root_count: usize,
         root_capacity: usize,
 
-        pub fn init_zig(
-            self: *State.C,
-            shared: *State.Shared,
-        ) Allocator.Error!void {
+        pub fn init_zig(self: *State.C) Allocator.Error!void {
+            const shared = &janet.runtime.state_shared;
             const s = try shared.gpa.create(State);
             s.* = .{
                 .gpa = shared.gpa,

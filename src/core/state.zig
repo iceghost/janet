@@ -1,14 +1,14 @@
 const janet = @import("janet");
 
 comptime {
-    @export(&init, .{ .name = "janet_init_zig" });
-    @export(&deinit, .{ .name = "janet_deinit_zig" });
+    @export(&init_zig, .{ .name = "janet_init_zig" });
+    @export(&deinit_zig, .{ .name = "janet_deinit_zig" });
 }
 
-fn init(c_state: *janet.State.C) callconv(.c) void {
-    c_state.init_zig(&janet.runtime.state_shared) catch janet.oom();
+fn init_zig(c_state: *janet.State.C) callconv(.c) void {
+    c_state.init_zig() catch janet.oom();
 }
 
-fn deinit(c_state: *janet.State.C) callconv(.c) void {
+fn deinit_zig(c_state: *janet.State.C) callconv(.c) void {
     c_state.deinit_zig();
 }

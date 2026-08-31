@@ -5,13 +5,13 @@ const janet = @import("janet");
 const Table = janet.value.Table;
 
 comptime {
-    @export(&create, .{ .name = "janet_table" });
+    @export(&default, .{ .name = "janet_table" });
     @export(&weakk, .{ .name = "janet_table_weakk" });
     @export(&weakv, .{ .name = "janet_table_weakv" });
     @export(&weakkv, .{ .name = "janet_table_weakkv" });
 }
 
-fn create(capacity: i32) callconv(.c) *Table.Extern {
+fn default(capacity: i32) callconv(.c) *Table.Extern {
     return create_typed(capacity, .table) catch janet.oom();
 }
 
