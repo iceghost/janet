@@ -438,6 +438,19 @@ pub const Table = extern struct {
         .proto = null,
     };
 
+    /// Allocated using the scratch allocator
+    pub const empty_scratch: Table = blk: {
+        var table: Table = .empty;
+        const flags = table.gc.flags_typed(Flags);
+        flags.stack = true;
+        break :blk table;
+    };
+
+    const Flags = packed struct(u16) {
+        stack: bool,
+        unused: u15 = 0,
+    };
+
     pub const Extern = extern struct {
         gc: janet.gc.Object,
         count: i32,
@@ -464,24 +477,31 @@ pub const Table = extern struct {
         return .{ handle, table };
     }
 
-    pub fn reserve_total(self: *Table, gpa: Allocator, requested: u32) Allocator.Error!void {
-        var total = requested;
-        total |= total >> 1;
-        total |= total >> 2;
-        total |= total >> 4;
-        total |= total >> 8;
-        total |= total >> 16;
-        return self.reserve_total_precise(
-            gpa,
-            if (total == std.math.maxInt(u32)) total else total + 1,
-        );
+    pub fn clear_and_free(self: *Table, rt: *janet.Runtime) void {
+        const flags = self.gc.flags_typed(Flags);
+        if (!flags.stack) {
+            rt.gpa.free(self.data[0..self.capacity]);
+        }
+        const gc = self.gc;
+        self.* = .empty;
+        self.gc = gc;
     }
 
-    pub fn reserve_total_precise(self: *Table, gpa: Allocator, total: u32) Allocator.Error!void {
+    pub fn reserve_total(self: *Table, rt: *janet.Runtime, requested: u32) Allocator.Error!void {
+        return self.reserve_total_precise(rt, grow_capacity(requested));
+    }
+
+    pub fn reserve_total_precise(self: *Table, rt: *janet.Runtime, total: u32) Allocator.Error!void {
         if (total <= self.capacity) return;
 
+        var scratch = rt.arena_per_gc.promote(rt.gpa);
+        defer rt.arena_per_gc = scratch.state;
+
+        const flags = self.gc.flags_typed(Flags);
+        const allocator = if (flags.stack) scratch.allocator() else rt.gpa;
+
         const size = std.math.mul(usize, total, @sizeOf(Pair)) catch return error.OutOfMemory;
-        const allocation = try janet.gc.alloc(gpa, size);
+        const allocation = try janet.gc.alloc(allocator, size);
         const entries: [*]Pair = @ptrCast(allocation.ptr);
         @memset(entries[0..total], .{ .key = .nil, .val = .nil });
 
@@ -497,7 +517,7 @@ pub const Table = extern struct {
                     janet_table_find(.wrap(self), entry.key).?.* = entry;
                 }
             }
-            janet.gc.free(gpa, @ptrCast(old_data));
+            janet.gc.free(allocator, @ptrCast(old_data));
         }
     }
 
