@@ -429,6 +429,15 @@ pub const Table = extern struct {
     data: [*]Pair,
     proto: ?*Table,
 
+    pub const empty: Table = .{
+        .gc = .disabled,
+        .count = 0,
+        .capacity = 0,
+        .count_deleted = 0,
+        .data = undefined,
+        .proto = null,
+    };
+
     pub const Extern = extern struct {
         gc: janet.gc.Object,
         count: i32,
@@ -451,14 +460,7 @@ pub const Table = extern struct {
 
     pub fn create_deferred(rt: *janet.Runtime) Allocator.Error!struct { janet.gc.Handle, *Table } {
         const handle, const table, _ = try janet.gc.create_deferred(rt, Table, u8, 0);
-        table.* = .{
-            .gc = .disabled,
-            .count = 0,
-            .capacity = 0,
-            .count_deleted = 0,
-            .data = undefined,
-            .proto = null,
-        };
+        table.* = .empty;
         return .{ handle, table };
     }
 
