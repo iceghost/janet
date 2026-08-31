@@ -487,12 +487,13 @@ pub const Table = extern struct {
         const old_capacity = self.capacity;
         self.data = entries;
         self.capacity = total;
-        self.count = 0;
         self.count_deleted = 0;
 
         if (old_capacity > 0) {
             for (old_data[0..old_capacity]) |entry| {
-                janet_table_put(.wrap(self), entry.key, entry.val);
+                if (!entry.key.checktype(.nil)) {
+                    janet_table_find(.wrap(self), entry.key).?.* = entry;
+                }
             }
             janet.gc.free(gpa, @ptrCast(old_data));
         }
@@ -549,7 +550,7 @@ pub const Tuple = extern struct {
 };
 
 extern fn janet_hash(v: Value) callconv(.c) i32;
-extern fn janet_table_put(table: *Table.Extern, key: Value, value: Value) callconv(.c) void;
+extern fn janet_table_find(table: *Table.Extern, key: Value) callconv(.c) ?*Pair;
 
 pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));
