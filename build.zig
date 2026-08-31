@@ -185,7 +185,7 @@ fn build_core_image(b: *std.Build, options: struct {
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main_boot.zig"),
             .target = b.graph.host,
-            .optimize = .ReleaseSafe,
+            .optimize = .Debug,
             .link_libc = true,
         }),
     });

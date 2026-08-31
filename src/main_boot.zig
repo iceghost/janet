@@ -18,7 +18,8 @@ pub fn main(init: std.process.Init) !u8 {
     const argv = try init.minimal.args.toSlice(init.arena.allocator());
 
     janet.Runtime.state_shared = .{
-        .gpa = init.gpa,
+        // bootstrap runs only once anyway, use an arena
+        .gpa = init.arena.allocator(),
     };
     _ = c.janet_init();
     defer c.janet_deinit();
