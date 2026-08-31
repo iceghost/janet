@@ -145,9 +145,6 @@ struct JanetVM {
 
     /* Scratch memory */
     void *scratch_pointer;
-    void **scratch_mem;
-    size_t scratch_cap;
-    size_t scratch_len;
 
     /* Sandbox flags */
     uint32_t sandbox_flags;

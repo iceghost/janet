@@ -43,6 +43,7 @@ static void janet_mark_buffer(JanetBuffer *buffer);
 static void janet_mark_string(const uint8_t *str);
 static void janet_mark_fiber(JanetFiber *fiber);
 static void janet_mark_abstract(void *adata);
+extern void janet_sfreeall(void);
 
 /* Local state that is only temporary for gc */
 static JANET_THREAD_LOCAL uint32_t depth = JANET_RECURSION_GUARD;
@@ -554,14 +555,6 @@ void *janet_gcalloc(enum JanetMemoryType type, size_t size) {
     return (void *)mem;
 }
 
-/* Free all allocated scratch memory */
-static void janet_free_all_scratch(void) {
-    for (size_t i = 0; i < janet_vm.scratch_len; i++) {
-        janet_free(janet_vm.scratch_mem[i]);
-    }
-    janet_vm.scratch_len = 0;
-}
-
 /* Run garbage collection */
 void janet_collect(void) {
     uint32_t i;
@@ -592,7 +585,7 @@ void janet_collect(void) {
     janet_vm.gc_mark_phase = 0;
     janet_sweep();
     janet_vm.next_collection = 0;
-    janet_free_all_scratch();
+    janet_sfreeall();
 }
 
 /* Add a root value to the GC. This prevents the GC from removing a value
@@ -687,8 +680,7 @@ void janet_clear_memory(void) {
         current = next;
     }
     janet_vm.weak_blocks = NULL;
-    janet_free_all_scratch();
-    janet_free(janet_vm.scratch_mem);
+    janet_sfreeall();
 }
 
 /* Primitives for suspending GC. */
@@ -697,69 +689,4 @@ int janet_gclock(void) {
 }
 void janet_gcunlock(int handle) {
     janet_vm.gc_suspend = handle;
-}
-
-/* Scratch memory API
- * Scratch memory allocations do not need to be free (but optionally can be), and will be automatically cleaned
- * up in the next call to janet_collect. */
-
-void *janet_smalloc(size_t size) {
-    void *mem = janet_malloc(size ? size : 1);
-    if (NULL == mem) {
-        JANET_OUT_OF_MEMORY;
-    }
-    if (janet_vm.scratch_len == janet_vm.scratch_cap) {
-        size_t newcap = 2 * janet_vm.scratch_cap + 2;
-        void **newmem = (void **) janet_realloc(janet_vm.scratch_mem, newcap * sizeof(void *));
-        if (NULL == newmem) {
-            JANET_OUT_OF_MEMORY;
-        }
-        janet_vm.scratch_cap = newcap;
-        janet_vm.scratch_mem = newmem;
-    }
-    janet_vm.scratch_mem[janet_vm.scratch_len++] = mem;
-    return mem;
-}
-
-void *janet_scalloc(size_t nmemb, size_t size) {
-    if (nmemb && size > SIZE_MAX / nmemb) {
-        JANET_OUT_OF_MEMORY;
-    }
-    size_t n = nmemb * size;
-    void *p = janet_smalloc(n);
-    memset(p, 0, n);
-    return p;
-}
-
-void *janet_srealloc(void *mem, size_t size) {
-    if (NULL == mem) return janet_smalloc(size);
-    if (janet_vm.scratch_len) {
-        for (size_t i = janet_vm.scratch_len - 1; ; i--) {
-            if (janet_vm.scratch_mem[i] == mem) {
-                void *newmem = janet_realloc(mem, size ? size : 1);
-                if (NULL == newmem) {
-                    JANET_OUT_OF_MEMORY;
-                }
-                janet_vm.scratch_mem[i] = newmem;
-                return newmem;
-            }
-            if (i == 0) break;
-        }
-    }
-    JANET_EXIT("invalid janet_srealloc");
-}
-
-void janet_sfree(void *mem) {
-    if (NULL == mem) return;
-    if (janet_vm.scratch_len) {
-        for (size_t i = janet_vm.scratch_len - 1; ; i--) {
-            if (janet_vm.scratch_mem[i] == mem) {
-                janet_vm.scratch_mem[i] = janet_vm.scratch_mem[--janet_vm.scratch_len];
-                janet_free(mem);
-                return;
-            }
-            if (i == 0) break;
-        }
-    }
-    JANET_EXIT("invalid janet_sfree");
 }

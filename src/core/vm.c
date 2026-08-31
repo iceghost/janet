@@ -1678,9 +1678,6 @@ int janet_init(void) {
 
     /* Scratch memory */
     janet_vm.scratch_pointer = NULL;
-    janet_vm.scratch_mem = NULL;
-    janet_vm.scratch_len = 0;
-    janet_vm.scratch_cap = 0;
 
     /* Sandbox flags */
     janet_vm.sandbox_flags = 0;
