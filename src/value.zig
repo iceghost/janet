@@ -592,6 +592,20 @@ pub const Table = extern struct {
         handle.finish(.table);
         return flattened;
     }
+
+    pub fn clone(self: *Table, rt: *janet.Runtime) Allocator.Error!*Table {
+        const handle, const cloned = try create_deferred(rt);
+        errdefer janet.gc.free(rt.gpa, @ptrCast(cloned));
+
+        try cloned.reserve_total_precise(rt, self.capacity);
+
+        cloned.count = self.count;
+        cloned.count_deleted = self.count_deleted;
+        cloned.proto = self.proto;
+        @memcpy(cloned.data[0..cloned.capacity], self.data[0..self.capacity]);
+        handle.finish(.table);
+        return cloned;
+    }
 };
 
 fn hash_mix(input: u32, more: u32) u32 {

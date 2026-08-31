@@ -101,21 +101,6 @@ void janet_table_clear(JanetTable *t) {
     t->deleted = 0;
 }
 
-/* Clone a table. */
-JanetTable *janet_table_clone(JanetTable *table) {
-    JanetTable *newTable = janet_gcalloc(JANET_MEMORY_TABLE, sizeof(JanetTable));
-    newTable->count = table->count;
-    newTable->capacity = table->capacity;
-    newTable->deleted = table->deleted;
-    newTable->proto = table->proto;
-    newTable->data = array_allocate(sizeof(JanetKV), newTable->capacity);
-    if (NULL == newTable->data) {
-        JANET_OUT_OF_MEMORY;
-    }
-    memcpy(newTable->data, table->data, (size_t) table->capacity * sizeof(JanetKV));
-    return newTable;
-}
-
 /* Merge a table or struct into a table */
 static void janet_table_mergekv(JanetTable *table, const JanetKV *kvs, int32_t cap) {
     int32_t i;
