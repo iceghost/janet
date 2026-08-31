@@ -1,3 +1,10 @@
+const std = @import("std");
+const mem = std.mem;
+const Allocator = mem.Allocator;
+
+const janet = @import("janet");
+const x = @import("x");
+
 pub const OpCode = enum {
     noop,
     @"error",
@@ -82,4 +89,54 @@ pub const OpCode = enum {
 pub const Quadruple = packed struct(u32) {
     op: OpCode,
     payload: [3]u8,
+};
+
+const Sourcemap = struct {
+    line: i32,
+    column: i32,
+};
+
+pub const Wip = struct {
+    instructions: std.ArrayList(Quadruple),
+    sourcemaps: std.ArrayList(Sourcemap),
+    scopes: std.DoublyLinkedList,
+
+    const Scope = struct {
+        slots: janet.compile.Register.Allocator,
+
+        const Function = struct {
+            scope: Scope,
+            constants: std.ArrayList(janet.Value),
+            upvalues: janet.compile.Register.Allocator,
+
+            fn append_constant(func: *Function, v: janet.Value) u32 {
+                _ = func; // autofix
+                _ = v; // autofix
+                //
+            }
+        };
+    };
+
+    fn emit(self: *Wip, ins: Quadruple) void {
+        _ = self; // autofix
+        _ = ins; // autofix
+        //
+    }
+
+    fn load_const(self: *Wip, v: janet.Value, reg: janet.compile.Register) void {
+        specialized_opcode: switch (v.unwrap()) {
+            .number => |f| {
+                if (self.cannot_cast(f)) break :specialized_opcode;
+            },
+        }
+
+        // no specialized opcode
+        const cindex = self.add_constant();
+        const payload: extern struct {
+            reg: u8,
+            cindex: u16,
+        } = .{ .reg = reg, .cindex = cindex };
+
+        self.emit(.{ .op = .load_constant, .payload = @bitCast(payload) });
+    }
 };
