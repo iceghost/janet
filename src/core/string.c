@@ -30,21 +30,6 @@
 
 #include <string.h>
 
-/* Begin building a string */
-uint8_t *janet_string_begin(int32_t length) {
-    JanetStringHead *head = janet_gcalloc(JANET_MEMORY_STRING, sizeof(JanetStringHead) + (size_t) length + 1);
-    head->length = length;
-    uint8_t *data = (uint8_t *)head->data;
-    data[length] = 0;
-    return data;
-}
-
-/* Finish building a string */
-const uint8_t *janet_string_end(uint8_t *str) {
-    janet_string_hash(str) = janet_string_calchash(str, janet_string_length(str));
-    return str;
-}
-
 /* Load a buffer as a string */
 const uint8_t *janet_string(const uint8_t *buf, int32_t len) {
     JanetStringHead *head = janet_gcalloc(JANET_MEMORY_STRING, sizeof(JanetStringHead) + (size_t) len + 1);

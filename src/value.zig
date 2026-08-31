@@ -164,6 +164,63 @@ pub const Box = extern struct {
     };
 };
 
+pub const String = extern struct {
+    gc: janet.gc.Object,
+    size: u32,
+    hash: u32,
+
+    /// Make sure C code does not use negative i32 first
+    pub const size_max = std.math.maxInt(u31);
+
+    pub const Extern = extern struct {
+        gc: janet.gc.Object,
+        size: i32,
+        hash: i32,
+        data: [0]u8,
+
+        pub const Pointer = extern struct {
+            ptr: [*]align(@alignOf(Extern)) u8,
+
+            pub fn cast_head(self: Pointer) *String {
+                const head = x.mem_recover_head(Extern, self.ptr);
+                assert(head.size >= 0);
+                return @ptrCast(head);
+            }
+
+            pub fn wrap(s: *String) Pointer {
+                const m = s.allocation();
+                _, const data = x.mem_chop_head(m, String);
+                return .{ .ptr = data.ptr };
+            }
+        };
+    };
+
+    fn allocation(s: *String) []align(janet.gc.alignment_size) u8 {
+        const ptr: [*]align(janet.gc.alignment_size) u8 = @ptrCast(s);
+        return ptr[0 .. @sizeOf(String) + s.size + 1];
+    }
+
+    pub fn begin(s: *janet.State, size: u32) Allocator.Error!*String {
+        assert(size <= size_max);
+        const handle, const head, const data = try janet.gc.create_deferred(s.gpa, String, u8, size + 1);
+        defer handle.finish(s, .string);
+        head.* = .{
+            .gc = .disabled,
+            .size = size,
+            .hash = undefined,
+        };
+        data[size] = 0;
+        return head;
+    }
+
+    pub fn end(s: *String) void {
+        const m = s.allocation();
+        _, const data = x.mem_chop_head(m, String);
+        assert(data.len >= 1);
+        s.hash = @truncate(std.hash_map.hashString(data[0..s.size]));
+    }
+};
+
 pub const Pair = extern struct {
     key: Value,
     val: Value,
