@@ -1,4 +1,5 @@
 const std = @import("std");
+const math = std.math;
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const assert = std.debug.assert;
@@ -50,6 +51,37 @@ pub const Box = extern struct {
 
     pub const nil: Box = .{ .repr = .nil };
 
+    pub const Tag = enum(u4) {
+        number,
+        nil,
+        boolean,
+        fiber,
+        string,
+        symbol,
+        keyword,
+        array,
+        tuple,
+        table,
+        @"struct",
+        buffer,
+        function,
+        cfunction,
+        abstract,
+        pointer,
+    };
+
+    pub fn checktype(v: Box, ty: Tag) bool {
+        return v.repr.unwrap_tag() == ty;
+    }
+
+    pub fn unwrap(v: Box) union(Tag) { number: f64 } {
+        switch (v.repr.unwrap_tag()) {
+            .number => {
+                //
+            },
+        }
+    }
+
     pub const representation: union(enum) {
         unbox,
         nanbox32,
@@ -84,25 +116,6 @@ pub const Box = extern struct {
             high: u13 = 0x1FFF,
         },
         float: f64,
-
-        pub const Tag = enum(u4) {
-            number,
-            nil,
-            boolean,
-            fiber,
-            string,
-            symbol,
-            keyword,
-            array,
-            tuple,
-            table,
-            @"struct",
-            buffer,
-            function,
-            cfunction,
-            abstract,
-            pointer,
-        };
 
         const pointer_shift = representation.nanbox64.pointer_shift;
         pub const nil = box_any(.nil, 1);
@@ -285,6 +298,22 @@ pub const Table = extern struct {
             }
             janet.gc.free(gpa, @ptrCast(old_data));
         }
+    }
+
+    fn grow_capacity(count: u32) u32 {
+        return std.math.ceilPowerOfTwo(u32, 2 *| count +| 2) catch |err| switch (err) {
+            error.Overflow => return std.math.maxInt(u32),
+        };
+    }
+
+    pub fn put(self: *Table, key: Value, val: Value) void {
+        if (key.checktype(.nil)) return;
+        if (key.checktype(.number) and math.isNaN(key.unwrap().number)) return;
+        if (val.checktype(.nil)) {
+            self.remove(key);
+        }
+
+        // TODO
     }
 };
 
