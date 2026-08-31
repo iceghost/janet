@@ -121,8 +121,8 @@ fn merge_struct(table: *Table.Extern, other: Struct.Extern.Pointer) callconv(.c)
     table.cast().merge(.default(), .from_struct(other.cast_head())) catch janet.oom();
 }
 
-fn to_struct(table: *Table.Extern) callconv(.c) [*]const Pair {
-    return table.cast().to_struct();
+fn to_struct(table: *Table.Extern) callconv(.c) Struct.Extern.Pointer {
+    return .wrap(table.cast().to_struct(.default()) catch janet.oom());
 }
 
 fn create_typed(requested_capacity: i32, object_type: janet.gc.ObjectType) std.mem.Allocator.Error!*Table.Extern {

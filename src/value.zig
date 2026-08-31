@@ -10,6 +10,9 @@ const x = @import("x");
 
 const Value = janet.Value;
 
+/// Maximum allowed proto search depth. Arbitrary picked number
+pub const max_proto_depth: usize = 200;
+
 pub const Array = extern struct {
     gc: janet.gc.Object,
     count: u32,
@@ -381,12 +384,12 @@ pub const DictView = extern struct {
     count: u32,
     capacity: u32,
 
-    pub fn from_table(t: *const Table) DictView {
+    pub fn from_table(t: *Table) DictView {
         return .{ .ptr = t.data, .count = t.count, .capacity = t.capacity };
     }
 
-    pub fn from_struct(t: *const Struct) DictView {
-        return .{ .ptr = @ptrCast(&t.data), .count = t.count, .capacity = t.capacity };
+    pub fn from_struct(t: *Struct) DictView {
+        return .{ .ptr = t.slice().ptr, .count = t.count, .capacity = t.capacity };
     }
 
     pub const ProbeResult = union(enum) {
@@ -458,15 +461,17 @@ pub const Struct = extern struct {
     count: u32,
     hash: u32,
     capacity: u32,
-    proto: ?*Struct,
-    data: [0]Pair = .{},
+    proto: Proto,
+
+    /// Detect negatives from C code
+    pub const count_max = std.math.maxInt(i32);
 
     pub const Extern = extern struct {
         gc: janet.gc.Object,
         count: i32,
         hash: u32,
         capacity: i32,
-        proto: ?*Extern,
+        proto: ?[*]const Pair,
         data: [0]Pair = .{},
 
         pub const Pointer = extern struct {
@@ -480,16 +485,29 @@ pub const Struct = extern struct {
             }
 
             pub fn wrap(s: *Struct) Pointer {
-                return .{ .ptr = @ptrCast(&s.data) };
+                return .{ .ptr = @ptrCast(s.slice_assume_wip().ptr) };
             }
         };
     };
 
+    pub const Proto = extern struct {
+        ptr: ?[*]align(@alignOf(usize)) u8,
+
+        const none: Proto = .{ .ptr = null };
+
+        pub fn unwrap(self: Proto) ?*Struct {
+            const ptr = self.ptr orelse return null;
+            return x.mem_recover_head(Struct, ptr);
+        }
+
+        pub fn wrap(s: *Struct) Proto {
+            return .{ .ptr = @ptrCast(s.slice_assume_wip().ptr) };
+        }
+    };
+
     pub fn begin(rt: *janet.Runtime, count: u32) Allocator.Error!*Struct {
-        const doubled = std.math.mul(u32, count, 2) catch return error.OutOfMemory;
-        const minimum = std.math.add(u32, doubled, 1) catch return error.OutOfMemory;
-        const capacity = std.math.ceilPowerOfTwo(u32, minimum) catch return error.OutOfMemory;
-        if (capacity > std.math.maxInt(i32)) return error.OutOfMemory;
+        const capacity = std.math.ceilPowerOfTwo(u32, 2 *| count +| 1) catch return error.OutOfMemory;
+        assert(capacity <= count_max);
 
         const handle, const head, const entries = try janet.gc.create_deferred(rt, Struct, Pair, capacity);
         defer handle.finish(.@"struct");
@@ -499,11 +517,151 @@ pub const Struct = extern struct {
             .count = count,
             .hash = 0,
             .capacity = capacity,
-            .proto = null,
+            .proto = .none,
         };
         @memset(entries, .{ .key = .nil, .val = .nil });
 
         return head;
+    }
+
+    pub fn find(self: *Struct, key: Value) ?*const Pair {
+        return switch (DictView.from_struct(self).probe(key)) {
+            .existing,
+            .not_found_but_vacant,
+            .not_found_but_tombstone,
+            => |i| &self.slice_assume_wip()[i],
+
+            .not_found_and_full => null,
+        };
+    }
+
+    /// Robinhood insertion to ensure consistent key order
+    pub fn put(self: *Struct, key: Value, val: Value, replace: bool) void {
+        if (key.checktype(.nil) or val.checktype(.nil)) return;
+        if (key.checktype(.number) and math.isNan(key.repr.float)) return;
+        assert(self.hash < self.count);
+
+        const entries = self.slice_assume_wip();
+        const mask = self.capacity - 1;
+
+        var candidate: Pair = .{ .key = key, .val = val };
+        var candidate_hash = hash(key);
+        var distance: u32 = 0;
+        var i = candidate_hash & mask;
+
+        while (distance < self.capacity) : ({
+            distance += 1;
+            i = (i + 1) & mask;
+        }) {
+            const entry = &entries[i];
+            if (entry.key.checktype(.nil)) {
+                entry.* = candidate;
+                self.hash += 1;
+                return;
+            }
+
+            const entry_hash = hash(entry.key);
+            const entry_distance = (i + self.capacity - (entry_hash & mask)) & mask;
+
+            const order: std.math.Order = if (distance != entry_distance)
+                std.math.order(distance, entry_distance)
+            else if (candidate_hash != entry_hash)
+                std.math.order(candidate_hash, entry_hash)
+            else
+                std.math.order(janet_compare(candidate.key, entry.key), 0);
+
+            switch (order) {
+                .lt => {},
+                .eq => {
+                    if (replace) entry.val = candidate.val;
+                    return;
+                },
+                .gt => {
+                    std.mem.swap(Pair, entry, &candidate);
+                    candidate_hash = entry_hash;
+                    distance = entry_distance;
+                },
+            }
+        }
+    }
+
+    /// Finish building a struct and finalize its hash.
+    pub fn end(self: *Struct, rt: *janet.Runtime) Allocator.Error!*Struct {
+        if (self.hash != self.count) {
+            const rebuilt = try begin(rt, self.hash);
+            for (self.slice_assume_wip()) |entry| {
+                if (!entry.key.checktype(.nil)) rebuilt.put(entry.key, entry.val, true);
+            }
+            rebuilt.proto = self.proto;
+            return rebuilt.end(rt);
+        }
+
+        self.hash = 33;
+        for (self.slice_assume_wip()) |entry| {
+            self.hash = hash_mix(self.hash, hash(entry.key));
+            self.hash = hash_mix(self.hash, hash(entry.val));
+        }
+        if (self.proto.unwrap()) |proto| {
+            self.hash +%= 2654435761 *% proto.hash;
+        }
+        return self;
+    }
+
+    pub fn get_shallow(self: *Struct, key: Value) ?Value {
+        return switch (DictView.from_struct(self).probe(key)) {
+            .existing => |i| self.slice()[i].val,
+            .not_found_but_vacant,
+            .not_found_and_full,
+            .not_found_but_tombstone,
+            => null,
+        };
+    }
+
+    pub fn get(self: *Struct, key: Value) ?Value {
+        const value, _ = self.get_proto(key) orelse return null;
+        return value;
+    }
+
+    pub fn get_proto(self: *Struct, key: Value) ?struct { Value, *Struct } {
+        var current: ?*Struct = self;
+        var depth: usize = 0;
+        while (current) |st| : ({
+            current = st.proto.unwrap();
+            depth += 1;
+        }) {
+            if (depth == max_proto_depth) break;
+            if (st.get_shallow(key)) |value| return .{ value, st };
+        }
+        return null;
+    }
+
+    pub fn to_table(self: *Struct, rt: *janet.Runtime) Allocator.Error!*Table {
+        const handle, const table = try Table.create_deferred(rt);
+        errdefer handle.destroy();
+
+        try table.reserve_total(rt, self.capacity);
+        errdefer table.clear_and_free(rt);
+
+        try table.merge(rt, .from_struct(self));
+        rt.c.gc_next_collection += @as(usize, table.capacity) * @sizeOf(Pair);
+        handle.finish(.table);
+        return table;
+    }
+
+    fn allocation(s: *Struct) []align(janet.gc.alignment_size) u8 {
+        const ptr: [*]align(janet.gc.alignment_size) u8 = @ptrCast(s);
+        return ptr[0 .. @sizeOf(Struct) + @sizeOf(Pair) * s.capacity];
+    }
+
+    pub fn slice(s: *Struct) []const Pair {
+        return s.slice_assume_wip();
+    }
+
+    /// Must not be mutated after hash is finalized
+    fn slice_assume_wip(s: *Struct) []Pair {
+        const m = s.allocation();
+        _, const data = x.mem_chop_head(m, Struct);
+        return std.mem.bytesAsSlice(Pair, data);
     }
 };
 
@@ -587,23 +745,8 @@ pub const Table = extern struct {
     }
 
     pub fn get(self: *Table, key: Value) ?Value {
-        var current: ?*Table = self;
-        var depth: usize = 0;
-        while (current) |table| : ({
-            current = table.proto;
-            depth += 1;
-        }) {
-            if (depth == max_proto_depth) break;
-
-            switch (table.probe(key)) {
-                .existing => |i| return table.data[i].val,
-                .not_found_but_vacant,
-                .not_found_and_full,
-                .not_found_but_tombstone,
-                => continue,
-            }
-        }
-        return null;
+        const v, _ = self.get_proto(key) orelse return null;
+        return v;
     }
 
     pub fn get_proto(self: *Table, key: Value) ?struct { Value, *Table } {
@@ -614,13 +757,7 @@ pub const Table = extern struct {
             depth += 1;
         }) {
             if (depth == max_proto_depth) break;
-            switch (table.probe(key)) {
-                .existing => |i| return .{ table.data[i].val, table },
-                .not_found_but_vacant,
-                .not_found_and_full,
-                .not_found_but_tombstone,
-                => continue,
-            }
+            if (table.get_shallow(key)) |val| return .{ val, table };
         }
         return null;
     }
@@ -818,12 +955,12 @@ pub const Table = extern struct {
         }
     }
 
-    pub fn to_struct(self: *Table) [*]const Pair {
-        const result = janet_struct_begin(@intCast(self.count));
+    pub fn to_struct(self: *Table, rt: *janet.Runtime) Allocator.Error!*Struct {
+        const s: *Struct = try .begin(rt, self.count);
         for (self.data[0..self.capacity]) |entry| {
-            if (!entry.key.checktype(.nil)) janet_struct_put(result, entry.key, entry.val);
+            if (!entry.key.checktype(.nil)) s.put(entry.key, entry.val, true);
         }
-        return janet_struct_end(result);
+        return try s.end(rt);
     }
 };
 
@@ -862,9 +999,7 @@ pub const Tuple = extern struct {
 
 extern fn janet_hash(v: Value) callconv(.c) i32;
 extern fn janet_equals(lhs: Value, rhs: Value) callconv(.c) c_int;
-extern fn janet_struct_begin(count: i32) callconv(.c) [*]Pair;
-extern fn janet_struct_put(st: [*]Pair, key: Value, value: Value) callconv(.c) void;
-extern fn janet_struct_end(st: [*]Pair) callconv(.c) [*]const Pair;
+extern fn janet_compare(lhs: Value, rhs: Value) callconv(.c) c_int;
 
 pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));
