@@ -215,7 +215,7 @@ pub const Table = extern struct {
     count: u32,
     capacity: u32,
     count_deleted: u32,
-    data: [*][2]janet.Value,
+    data: [*]Pair,
     proto: ?*Table,
 
     pub const Extern = extern struct {
@@ -267,10 +267,10 @@ pub const Table = extern struct {
     pub fn reserve_total_precise(self: *Table, gpa: Allocator, total: u32) Allocator.Error!void {
         if (total <= self.capacity) return;
 
-        const size = std.math.mul(usize, total, @sizeOf([2]Value)) catch return error.OutOfMemory;
+        const size = std.math.mul(usize, total, @sizeOf(Pair)) catch return error.OutOfMemory;
         const allocation = try janet.gc.alloc(gpa, size);
-        const entries: [*][2]Value = @ptrCast(allocation.ptr);
-        @memset(entries[0..total], .{ .nil, .nil });
+        const entries: [*]Pair = @ptrCast(allocation.ptr);
+        @memset(entries[0..total], .{ .key = .nil, .val = .nil });
 
         const old_data = self.data;
         const old_capacity = self.capacity;
@@ -281,7 +281,7 @@ pub const Table = extern struct {
 
         if (old_capacity > 0) {
             for (old_data[0..old_capacity]) |entry| {
-                janet_table_put(.wrap(self), entry[0], entry[1]);
+                janet_table_put(.wrap(self), entry.key, entry.val);
             }
             janet.gc.free(gpa, @ptrCast(old_data));
         }
