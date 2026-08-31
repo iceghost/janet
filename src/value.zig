@@ -568,7 +568,7 @@ pub const Table = extern struct {
     /// Flatten all tables in the proto chain into a new table
     pub fn flatten(self: *Table, rt: *janet.Runtime) Allocator.Error!*Table {
         const handle, const flattened = try create_deferred(rt);
-        errdefer janet.gc.free(rt.gpa, @ptrCast(flattened));
+        errdefer handle.destroy();
 
         try flattened.reserve_total(rt, self.capacity);
         errdefer flattened.clear_and_free(rt);
@@ -589,7 +589,7 @@ pub const Table = extern struct {
 
     pub fn clone(self: *Table, rt: *janet.Runtime) Allocator.Error!*Table {
         const handle, const cloned = try create_deferred(rt);
-        errdefer janet.gc.free(rt.gpa, @ptrCast(cloned));
+        errdefer handle.destroy();
 
         try cloned.reserve_total_precise(rt, self.capacity);
 

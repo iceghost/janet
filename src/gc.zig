@@ -92,6 +92,10 @@ pub const Handle = struct {
             },
         }
     }
+
+    pub fn destroy(self: Handle) void {
+        free(self.rt.gpa, @ptrCast(self.object));
+    }
 };
 
 pub fn create_deferred(
