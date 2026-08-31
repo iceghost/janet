@@ -2043,12 +2043,9 @@ JANET_API void janet_sandbox(uint32_t flags);
 JANET_API void janet_sandbox_assert(uint32_t forbidden_flags);
 
 /* Scratch Memory API */
-typedef void (*JanetScratchFinalizer)(void *);
-
 JANET_API void *janet_smalloc(size_t size);
 JANET_API void *janet_srealloc(void *mem, size_t size);
 JANET_API void *janet_scalloc(size_t nmemb, size_t size);
-JANET_API void janet_sfinalizer(void *mem, JanetScratchFinalizer finalizer);
 JANET_API void janet_sfree(void *mem);
 
 /* C Library helpers */

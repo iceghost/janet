@@ -6,6 +6,8 @@ const janet = @import("janet");
 
 pub const State = struct {
     gpa: Allocator,
+    /// Arena lifetime tied to one GC cycle
+    arena_per_gc: std.heap.ArenaAllocator.State,
     c: *C,
 
     /// Global state shared by all Janet VM instances
@@ -36,6 +38,7 @@ pub const State = struct {
             const s = try shared.gpa.create(State);
             s.* = .{
                 .gpa = shared.gpa,
+                .arena_per_gc = .init,
                 .c = self,
             };
             self.zig = s;

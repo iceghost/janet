@@ -39,11 +39,6 @@
 
 typedef int64_t JanetTimestamp;
 
-typedef struct JanetScratch {
-    JanetScratchFinalizer finalize;
-    long long mem[]; /* for proper alignment */
-} JanetScratch;
-
 typedef struct {
     JanetGCObject *self;
     JanetGCObject *other;
@@ -150,7 +145,7 @@ struct JanetVM {
 
     /* Scratch memory */
     void *scratch_pointer;
-    JanetScratch **scratch_mem;
+    void **scratch_mem;
     size_t scratch_cap;
     size_t scratch_len;
 
