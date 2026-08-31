@@ -4,6 +4,7 @@ const c = janet.c;
 
 pub const janet_options = .{
     .bootstrap = true,
+    .nanbox = true,
 };
 
 extern fn array_test() callconv(.c) c_int;

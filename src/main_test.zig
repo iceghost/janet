@@ -8,6 +8,7 @@ const x = @import("x");
 
 pub const janet_options = .{
     .bootstrap = false,
+    .nanbox = true,
 };
 
 const Runner = struct {

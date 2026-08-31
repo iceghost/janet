@@ -50,6 +50,7 @@ pub const Box = extern struct {
     repr: Nan64,
 
     pub const nil: Box = .{ .repr = .nil };
+    pub const @"false": Box = .{ .repr = .box_any(.boolean, 0) };
 
     pub const Tag = enum(u4) {
         number,
@@ -74,12 +75,20 @@ pub const Box = extern struct {
         return v.repr.unwrap_tag() == ty;
     }
 
-    pub fn unwrap(v: Box) union(Tag) { number: f64 } {
-        switch (v.repr.unwrap_tag()) {
-            .number => {
-                //
+    pub fn unwrap(v: Box) union {
+        nil: void,
+        number: f64,
+        string: *String,
+    } {
+        return switch (v.repr.unwrap_tag()) {
+            .number => .{ .number = v.repr.float },
+            .nil => .{ .nil = {} },
+            .string, .keyword, .symbol => {
+                const p: String.Extern.Pointer = .{ .ptr = @ptrFromInt(v.repr.pointer_bits()) };
+                return .{ .string = p.cast_head() };
             },
-        }
+            else => @panic("unimplemented"),
+        };
     }
 
     pub fn wrap_keyword(s: *String) Box {
@@ -367,6 +376,83 @@ pub const Pair = extern struct {
     val: Value,
 };
 
+pub const DictView = extern struct {
+    ptr: [*]const Pair,
+    count: u32,
+    capacity: u32,
+
+    pub fn from_table(t: *const Table) DictView {
+        return .{ .ptr = t.data, .count = t.count, .capacity = t.capacity };
+    }
+
+    pub fn from_struct(t: *const Struct) DictView {
+        return .{ .ptr = @ptrCast(&t.data), .count = t.count, .capacity = t.capacity };
+    }
+
+    pub const ProbeResult = union(enum) {
+        existing: usize,
+        not_found_but_vacant: usize,
+        not_found_but_tombstone: usize,
+        not_found_and_full,
+    };
+
+    pub fn probe(self: DictView, key: Value) ProbeResult {
+        if (self.capacity == 0) return .not_found_and_full;
+
+        const start = hash(key) & (self.capacity - 1);
+        var first_tombstone: ?usize = null;
+
+        inline for (
+            [_][]const Pair{ self.ptr[start..self.capacity], self.ptr[0..start] },
+            .{ start, 0 },
+        ) |half, i_start| {
+            for (half, i_start..) |pair, i| {
+                if (pair.key.checktype(.nil)) {
+                    if (pair.val.checktype(.nil)) return .{ .not_found_but_vacant = i };
+                    first_tombstone = first_tombstone orelse i;
+                } else if (janet_equals(pair.key, key) != 0) {
+                    return .{ .existing = i };
+                }
+            }
+        }
+
+        return if (first_tombstone) |i|
+            .{ .not_found_but_tombstone = i }
+        else
+            .not_found_and_full;
+    }
+
+    pub fn probe_keyword(self: DictView, kw: []const u8) ProbeResult {
+        if (self.capacity == 0) return .not_found_and_full;
+
+        const hash_val: u32 = @truncate(std.hash_map.hashString(kw));
+        const start = hash_val & (self.capacity - 1);
+
+        var first_tombstone: ?usize = null;
+        inline for (
+            [_][]const Pair{ self.ptr[start..self.capacity], self.ptr[0..start] },
+            .{ start, 0 },
+        ) |half, i_start| {
+            for (half, i_start..) |pair, i| {
+                if (pair.key.checktype(.nil)) {
+                    if (pair.val.checktype(.nil)) return .{ .not_found_but_vacant = i };
+                    first_tombstone = first_tombstone orelse i;
+                } else if (pair.key.checktype(.keyword)) {
+                    const s = pair.key.unwrap().string;
+                    if (hash_val == s.hash and std.mem.eql(u8, s.slice(), kw)) {
+                        return .{ .existing = i };
+                    }
+                }
+            }
+        }
+
+        return if (first_tombstone) |i|
+            .{ .not_found_but_vacant = i }
+        else
+            .not_found_and_full;
+    }
+};
+
 pub const Struct = extern struct {
     gc: janet.gc.Object,
     count: u32,
@@ -496,6 +582,101 @@ pub const Table = extern struct {
         return self.reserve_total_precise(rt, grow_capacity(requested));
     }
 
+    pub fn probe(self: *Table, key: Value) DictView.ProbeResult {
+        return DictView.from_table(self).probe(key);
+    }
+
+    pub fn get(self: *Table, key: Value) ?Value {
+        var current: ?*Table = self;
+        var depth: usize = 0;
+        while (current) |table| : ({
+            current = table.proto;
+            depth += 1;
+        }) {
+            if (depth == max_proto_depth) break;
+
+            switch (table.probe(key)) {
+                .existing => |i| return table.data[i].val,
+                .not_found_but_vacant,
+                .not_found_and_full,
+                .not_found_but_tombstone,
+                => continue,
+            }
+        }
+        return null;
+    }
+
+    pub fn get_proto(self: *Table, key: Value) ?struct { Value, *Table } {
+        var current: ?*Table = self;
+        var depth: usize = 0;
+        while (current) |table| : ({
+            current = table.proto;
+            depth += 1;
+        }) {
+            if (depth == max_proto_depth) break;
+            switch (table.probe(key)) {
+                .existing => |i| return .{ table.data[i].val, table },
+                .not_found_but_vacant,
+                .not_found_and_full,
+                .not_found_but_tombstone,
+                => continue,
+            }
+        }
+        return null;
+    }
+
+    pub fn get_keyword(self: *Table, keyword: []const u8) ?Value {
+        var current: ?*Table = self;
+        var depth: usize = 0;
+        while (current) |table| : ({
+            current = table.proto;
+            depth += 1;
+        }) {
+            if (depth == max_proto_depth) break;
+            const view: DictView = .from_table(table);
+            switch (view.probe_keyword(keyword)) {
+                .existing => |i| return table.data[i].val,
+                .not_found_but_vacant,
+                .not_found_and_full,
+                .not_found_but_tombstone,
+                => continue,
+            }
+        }
+        return null;
+    }
+
+    pub fn get_shallow(self: *Table, key: Value) ?Value {
+        return switch (self.probe(key)) {
+            .existing => |i| self.data[i].val,
+            .not_found_but_vacant,
+            .not_found_and_full,
+            .not_found_but_tombstone,
+            => null,
+        };
+    }
+
+    pub fn remove(self: *Table, key: Value) ?Value {
+        switch (self.probe(key)) {
+            .existing => |i| {
+                const removed = self.data[i].val;
+                self.count -= 1;
+                self.count_deleted += 1;
+                self.data[i] = .{ .key = .nil, .val = .false };
+                return removed;
+            },
+            .not_found_but_vacant,
+            .not_found_and_full,
+            .not_found_but_tombstone,
+            => return null,
+        }
+    }
+
+    pub fn clear(self: *Table) void {
+        @memset(self.data[0..self.capacity], .{ .key = .nil, .val = .nil });
+        self.count = 0;
+        self.count_deleted = 0;
+    }
+
     fn reserve_total_precise(self: *Table, rt: *janet.Runtime, total: u32) Allocator.Error!void {
         var scratch = rt.arena_per_gc.promote(rt.gpa);
         defer rt.arena_per_gc = scratch.state;
@@ -504,18 +685,21 @@ pub const Table = extern struct {
         const allocator = if (flags.stack) scratch.allocator() else rt.gpa;
 
         const allocation = try allocator.alloc(Pair, total);
-        const entries: [*]Pair = @ptrCast(allocation.ptr);
-        @memset(entries[0..total], .{ .key = .nil, .val = .nil });
+        @memset(allocation, .{ .key = .nil, .val = .nil });
 
         const old_data = self.data;
         const old_capacity = self.capacity;
-        self.data = entries;
+        self.data = allocation.ptr;
         self.capacity = total;
         self.count_deleted = 0;
 
         for (old_data[0..old_capacity]) |entry| {
             if (!entry.key.checktype(.nil)) {
-                janet_table_find(.wrap(self), entry.key).?.* = entry;
+                const index = switch (self.probe(entry.key)) {
+                    .existing, .not_found_but_vacant, .not_found_but_tombstone => |i| i,
+                    .not_found_and_full => unreachable,
+                };
+                self.data[index] = entry;
             }
         }
         allocator.free(old_data[0..old_capacity]);
@@ -531,38 +715,62 @@ pub const Table = extern struct {
         if (key.checktype(.nil)) return;
         if (key.checktype(.number) and math.isNan(key.repr.float)) return;
         if (val.checktype(.nil)) {
-            _ = janet_table_remove(.wrap(self), key);
+            _ = self.remove(key);
             return;
         }
 
-        var bucket = janet_table_find(.wrap(self), key);
-        if (bucket != null and !bucket.?.key.checktype(.nil)) {
-            bucket.?.val = val;
-            return;
-        }
-
-        if (bucket == null or self.count +| self.count_deleted +| 1 > self.capacity / 2) {
-            try self.reserve_total_precise(rt, grow_capacity(self.count));
-        }
-
-        bucket = janet_table_find(.wrap(self), key);
-        if (bucket.?.val.checktype(.boolean)) self.count_deleted -= 1;
-        bucket.?.* = .{ .key = key, .val = val };
-        self.count += 1;
+        const gop = try self.get_or_put_assume_checked(rt, key);
+        self.data[gop.index].val = val;
     }
 
-    fn put_no_overwrite(self: *Table, rt: *janet.Runtime, key: Value, val: Value) Allocator.Error!void {
-        var bucket = janet_table_find(.wrap(self), key);
-        if (bucket != null and !bucket.?.key.checktype(.nil)) return;
+    const GetOrPutResult = struct {
+        found_existing: bool,
+        index: usize,
+    };
 
-        if (bucket == null or self.count +| self.count_deleted +| 1 > self.capacity / 2) {
-            try self.reserve_total_precise(rt, grow_capacity(self.count));
+    fn get_or_put_assume_checked(self: *Table, rt: *janet.Runtime, key: Value) Allocator.Error!GetOrPutResult {
+        // internal use so those should be true
+        assert(!key.checktype(.nil));
+        assert(!key.checktype(.number) or !math.isNan(key.repr.float));
+
+        const result_initial = self.probe(key);
+        const result = find: switch (result_initial) {
+            .existing => |i| return .{
+                .found_existing = true,
+                .index = i,
+            },
+            .not_found_and_full,
+            .not_found_but_vacant,
+            .not_found_but_tombstone,
+            => |_, t| {
+                if (t == .not_found_and_full or
+                    self.count +| self.count_deleted +| 1 > self.capacity / 2)
+                {
+                    try self.reserve_total_precise(rt, grow_capacity(self.count));
+                    break :find self.probe(key);
+                } else {
+                    break :find result_initial;
+                }
+            },
+        };
+
+        switch (result) {
+            .existing,
+            .not_found_and_full,
+            => unreachable,
+
+            .not_found_but_vacant,
+            .not_found_but_tombstone,
+            => |i, t| {
+                if (t == .not_found_but_tombstone) self.count_deleted -= 1;
+                self.count += 1;
+                self.data[i].key = key;
+                return .{
+                    .found_existing = false,
+                    .index = i,
+                };
+            },
         }
-
-        bucket = janet_table_find(.wrap(self), key);
-        if (bucket.?.val.checktype(.boolean)) self.count_deleted -= 1;
-        bucket.?.* = .{ .key = key, .val = val };
-        self.count += 1;
     }
 
     /// Flatten all tables in the proto chain into a new table
@@ -577,7 +785,10 @@ pub const Table = extern struct {
         while (current) |table| : (current = table.proto) {
             for (table.data[0..table.capacity]) |entry| {
                 if (!entry.key.checktype(.nil)) {
-                    try flattened.put_no_overwrite(rt, entry.key, entry.val);
+                    const gop = try flattened.get_or_put_assume_checked(rt, entry.key);
+                    if (!gop.found_existing) {
+                        flattened.data[gop.index].val = entry.val;
+                    }
                 }
             }
         }
@@ -599,6 +810,20 @@ pub const Table = extern struct {
         @memcpy(cloned.data[0..cloned.capacity], self.data[0..self.capacity]);
         handle.finish(.table);
         return cloned;
+    }
+
+    pub fn merge(self: *Table, rt: *janet.Runtime, view: DictView) Allocator.Error!void {
+        for (view.ptr[0..view.capacity]) |entry| {
+            if (!entry.key.checktype(.nil)) try self.put(rt, entry.key, entry.val);
+        }
+    }
+
+    pub fn to_struct(self: *Table) [*]const Pair {
+        const result = janet_struct_begin(@intCast(self.count));
+        for (self.data[0..self.capacity]) |entry| {
+            if (!entry.key.checktype(.nil)) janet_struct_put(result, entry.key, entry.val);
+        }
+        return janet_struct_end(result);
     }
 };
 
@@ -636,8 +861,10 @@ pub const Tuple = extern struct {
 };
 
 extern fn janet_hash(v: Value) callconv(.c) i32;
-extern fn janet_table_find(table: *Table.Extern, key: Value) callconv(.c) ?*Pair;
-extern fn janet_table_remove(table: *Table.Extern, key: Value) callconv(.c) Value;
+extern fn janet_equals(lhs: Value, rhs: Value) callconv(.c) c_int;
+extern fn janet_struct_begin(count: i32) callconv(.c) [*]Pair;
+extern fn janet_struct_put(st: [*]Pair, key: Value, value: Value) callconv(.c) void;
+extern fn janet_struct_end(st: [*]Pair) callconv(.c) [*]const Pair;
 
 pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));

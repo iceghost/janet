@@ -2,6 +2,8 @@ const std = @import("std");
 
 const janet = @import("janet");
 
+const Pair = janet.value.Pair;
+const Struct = janet.value.Struct;
 const Table = janet.value.Table;
 
 comptime {
@@ -15,6 +17,16 @@ comptime {
     @export(&put, .{ .name = "janet_table_put" });
     @export(&proto_flatten, .{ .name = "janet_table_proto_flatten" });
     @export(&clone, .{ .name = "janet_table_clone" });
+    @export(&find, .{ .name = "janet_table_find" });
+    @export(&get, .{ .name = "janet_table_get" });
+    @export(&get_keyword, .{ .name = "janet_table_get_keyword" });
+    @export(&get_ex, .{ .name = "janet_table_get_ex" });
+    @export(&rawget, .{ .name = "janet_table_rawget" });
+    @export(&remove, .{ .name = "janet_table_remove" });
+    @export(&clear, .{ .name = "janet_table_clear" });
+    @export(&merge_table, .{ .name = "janet_table_merge_table" });
+    @export(&merge_struct, .{ .name = "janet_table_merge_struct" });
+    @export(&to_struct, .{ .name = "janet_table_to_struct" });
 }
 
 fn default(capacity: i32) callconv(.c) *Table.Extern {
@@ -61,6 +73,56 @@ fn proto_flatten(table: *Table.Extern) callconv(.c) *Table.Extern {
 
 fn clone(table: *Table.Extern) callconv(.c) *Table.Extern {
     return .wrap(table.cast().clone(.default()) catch janet.oom());
+}
+
+fn find(table: *Table.Extern, key: janet.Value) callconv(.c) ?*Pair {
+    const t = table.cast();
+    return switch (t.probe(key)) {
+        .existing,
+        .not_found_but_vacant,
+        .not_found_but_tombstone,
+        => |i| &t.data[i],
+
+        .not_found_and_full => null,
+    };
+}
+
+fn get(table: *Table.Extern, key: janet.Value) callconv(.c) janet.Value {
+    return table.cast().get(key) orelse .nil;
+}
+
+fn get_keyword(table: *Table.Extern, keyword: [*:0]const u8) callconv(.c) janet.Value {
+    return table.cast().get_keyword(std.mem.span(keyword)) orelse .nil;
+}
+
+fn get_ex(table: *Table.Extern, key: janet.Value, which: *?*Table.Extern) callconv(.c) janet.Value {
+    const value, const proto = table.cast().get_proto(key) orelse return .nil;
+    which.* = .wrap(proto);
+    return value;
+}
+
+fn rawget(table: *Table.Extern, key: janet.Value) callconv(.c) janet.Value {
+    return table.cast().get_shallow(key) orelse .nil;
+}
+
+fn remove(table: *Table.Extern, key: janet.Value) callconv(.c) janet.Value {
+    return table.cast().remove(key) orelse .nil;
+}
+
+fn clear(table: *Table.Extern) callconv(.c) void {
+    table.cast().clear();
+}
+
+fn merge_table(table: *Table.Extern, other: *Table.Extern) callconv(.c) void {
+    table.cast().merge(.default(), .from_table(other.cast())) catch janet.oom();
+}
+
+fn merge_struct(table: *Table.Extern, other: Struct.Extern.Pointer) callconv(.c) void {
+    table.cast().merge(.default(), .from_struct(other.cast_head())) catch janet.oom();
+}
+
+fn to_struct(table: *Table.Extern) callconv(.c) [*]const Pair {
+    return table.cast().to_struct();
 }
 
 fn create_typed(requested_capacity: i32, object_type: janet.gc.ObjectType) std.mem.Allocator.Error!*Table.Extern {
