@@ -33,6 +33,51 @@ pub fn mem_recover_head(comptime Head: type, m: [*]align(@alignOf(Head)) u8) *He
     return @ptrCast(head_pointer);
 }
 
+pub fn CSlice(comptime MaybePointer: type) type {
+    const Pointer = @typeInfo(MaybePointer).optional.child;
+    const info = @typeInfo(Pointer).pointer;
+    assert(info.size == .many);
+    // TODO: figure how to do sentinel
+    assert(info.sentinel() == null);
+    return @Pointer(.slice, .{
+        .@"const" = info.is_const,
+        .@"volatile" = info.is_volatile,
+        .@"allowzero" = info.is_allowzero,
+        .@"addrspace" = info.address_space,
+        .@"align" = info.alignment,
+    }, info.child, null);
+}
+
+/// Construct a Zig slice from C nullable ptr and len pair
+pub fn c_slice(ptr: anytype, len: i32) CSlice(@TypeOf(ptr)) {
+    const ulen: u32 = @intCast(len);
+    if (ptr == null) {
+        assert(ulen == 0);
+        return &.{};
+    } else {
+        return ptr.?[0..ulen];
+    }
+}
+
+test c_slice {
+    try std.testing.expect(CSlice(?[*]align(16) const volatile u8) == []align(16) const volatile u8);
+
+    {
+        var values = [_]u16{ 1, 2, 3 };
+        const slice = c_slice(@as(?[*]u16, &values), 3);
+        try std.testing.expectEqualSlices(u16, &values, slice);
+    }
+
+    const empty = c_slice(@as(?[*]const u16, null), 0);
+    try std.testing.expectEqual(@as(usize, 0), empty.len);
+
+    // {
+    //     var values = [_:0]u16{ 1, 2, 3 };
+    //     const slice = c_slice(@as(?[*:0]u16, &values), 3);
+    //     try std.testing.expectEqualSlices(u16, &values, slice);
+    // }
+}
+
 test "chop and recover memory head" {
     const Head = extern struct {
         size: usize,

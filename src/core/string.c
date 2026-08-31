@@ -30,17 +30,6 @@
 
 #include <string.h>
 
-/* Load a buffer as a string */
-const uint8_t *janet_string(const uint8_t *buf, int32_t len) {
-    JanetStringHead *head = janet_gcalloc(JANET_MEMORY_STRING, sizeof(JanetStringHead) + (size_t) len + 1);
-    head->length = len;
-    head->hash = janet_string_calchash(buf, len);
-    uint8_t *data = (uint8_t *)head->data;
-    safe_memcpy(data, buf, len);
-    data[len] = 0;
-    return data;
-}
-
 /* Compare two strings */
 int janet_string_compare(const uint8_t *lhs, const uint8_t *rhs) {
     int32_t xlen = janet_string_length(lhs);

@@ -200,17 +200,17 @@ pub const String = extern struct {
         return ptr[0 .. @sizeOf(String) + s.size + 1];
     }
 
-    pub fn begin(s: *janet.State, size: u32) Allocator.Error!*String {
+    pub fn begin(rt: *janet.State, size: u32) Allocator.Error!struct { *String, [:0]u8 } {
         assert(size <= size_max);
-        const handle, const head, const data = try janet.gc.create_deferred(s.gpa, String, u8, size + 1);
-        defer handle.finish(s, .string);
+        const handle, const head, const data = try janet.gc.create_deferred(rt.gpa, String, u8, size + 1);
+        defer handle.finish(rt, .string);
         head.* = .{
             .gc = .disabled,
             .size = size,
             .hash = undefined,
         };
         data[size] = 0;
-        return head;
+        return .{ head, data[0..size :0] };
     }
 
     pub fn end(s: *String) void {
@@ -218,6 +218,13 @@ pub const String = extern struct {
         _, const data = x.mem_chop_head(m, String);
         assert(data.len >= 1);
         s.hash = @truncate(std.hash_map.hashString(data[0..s.size]));
+    }
+
+    pub fn from_bytes(rt: *janet.State, bytes: []const u8) Allocator.Error!*String {
+        const s, const data = try begin(rt, @intCast(bytes.len));
+        @memcpy(data, bytes);
+        s.end();
+        return s;
     }
 };
 
