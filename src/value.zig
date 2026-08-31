@@ -479,8 +479,12 @@ pub const Table = extern struct {
 
     pub fn clear_and_free(self: *Table, rt: *janet.Runtime) void {
         const flags = self.gc.flags_typed(Flags);
-        if (!flags.stack) {
-            rt.gpa.free(self.data[0..self.capacity]);
+        if (flags.stack) {
+            var scratch = rt.arena_per_gc.promote(rt.gpa);
+            defer rt.arena_per_gc = scratch.state;
+            janet.gc.free(scratch.allocator(), @ptrCast(self.data));
+        } else {
+            janet.gc.free(rt.gpa, @ptrCast(self.data));
         }
         const gc = self.gc;
         self.* = .empty;

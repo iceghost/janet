@@ -9,6 +9,9 @@ comptime {
     @export(&weakk, .{ .name = "janet_table_weakk" });
     @export(&weakv, .{ .name = "janet_table_weakv" });
     @export(&weakkv, .{ .name = "janet_table_weakkv" });
+    @export(&init, .{ .name = "janet_table_init" });
+    @export(&init_raw, .{ .name = "janet_table_init_raw" });
+    @export(&deinit, .{ .name = "janet_table_deinit" });
 }
 
 fn default(capacity: i32) callconv(.c) *Table.Extern {
@@ -25,6 +28,23 @@ fn weakv(capacity: i32) callconv(.c) *Table.Extern {
 
 fn weakkv(capacity: i32) callconv(.c) *Table.Extern {
     return create_typed(capacity, .table_weakkv) catch janet.oom();
+}
+
+fn init(t: *Table, capacity: i32) callconv(.c) *Table.Extern {
+    t.* = .empty_scratch;
+    t.reserve_total(.default(), @intCast(capacity)) catch janet.oom();
+    return .wrap(t);
+}
+
+fn init_raw(t: *Table, capacity: i32) callconv(.c) *Table.Extern {
+    t.* = .empty;
+    t.reserve_total(.default(), @intCast(capacity)) catch janet.oom();
+    return .wrap(t);
+}
+
+fn deinit(table: *Table.Extern) callconv(.c) void {
+    const t: *Table = table.cast();
+    t.clear_and_free(.default());
 }
 
 fn create_typed(requested_capacity: i32, object_type: janet.gc.ObjectType) std.mem.Allocator.Error!*Table.Extern {

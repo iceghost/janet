@@ -42,50 +42,6 @@ static void *janet_memalloc_empty_local(int32_t count) {
     return mem;
 }
 
-static JanetTable *janet_table_init_impl(JanetTable *table, int32_t capacity, int stackalloc) {
-    JanetKV *data;
-    capacity = janet_tablen(capacity);
-    if (stackalloc) table->gc.flags = JANET_TABLE_FLAG_STACK;
-    if (capacity) {
-        if (stackalloc) {
-            data = janet_memalloc_empty_local(capacity);
-        } else {
-            data = (JanetKV *) janet_memalloc_empty(capacity);
-            if (NULL == data) {
-                JANET_OUT_OF_MEMORY;
-            }
-        }
-        table->data = data;
-        table->capacity = capacity;
-    } else {
-        table->data = NULL;
-        table->capacity = 0;
-    }
-    table->count = 0;
-    table->deleted = 0;
-    table->proto = NULL;
-    return table;
-}
-
-/* Initialize a table (for use with scratch memory) */
-JanetTable *janet_table_init(JanetTable *table, int32_t capacity) {
-    return janet_table_init_impl(table, capacity, 1);
-}
-
-/* Initialize a table without using scratch memory */
-JanetTable *janet_table_init_raw(JanetTable *table, int32_t capacity) {
-    return janet_table_init_impl(table, capacity, 0);
-}
-
-/* Deinitialize a table */
-void janet_table_deinit(JanetTable *table) {
-    if (table->gc.flags & JANET_TABLE_FLAG_STACK) {
-        janet_sfree(table->data);
-    } else {
-        janet_free(table->data);
-    }
-}
-
 /* Find the bucket that contains the given key. Will also return
  * bucket where key should go if not in the table. */
 JanetKV *janet_table_find(JanetTable *t, Janet key) {
