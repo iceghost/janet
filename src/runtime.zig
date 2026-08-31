@@ -4,59 +4,59 @@ const Allocator = mem.Allocator;
 
 const janet = @import("janet");
 
-pub const State = struct {
+const Runtime = @This();
+
+gpa: Allocator,
+/// Arena lifetime tied to one GC cycle
+arena_per_gc: std.heap.ArenaAllocator.State,
+c: *C,
+
+symbol_pool: janet.value.String.Pool,
+symbol_generator: janet.value.String.Generator,
+
+/// Global state shared by all Janet VM instances
+pub const Shared = struct {
     gpa: Allocator,
-    /// Arena lifetime tied to one GC cycle
-    arena_per_gc: std.heap.ArenaAllocator.State,
-    c: *C,
+};
 
-    symbol_pool: janet.value.String.Pool,
-    symbol_generator: janet.value.String.Generator,
+/// Partially specified
+pub const C = extern struct {
+    zig: *Runtime,
 
-    /// Global state shared by all Janet VM instances
-    pub const Shared = struct {
-        gpa: Allocator,
-    };
+    blocks: ?*janet.gc.Object,
+    blocks_weak: ?*janet.gc.Object,
+    blocks_count: usize,
+    gc_interval: usize,
+    gc_next_collection: usize,
+    gc_suspend: c_int,
+    gc_mark_phase: c_int,
 
-    /// Partially specified
-    pub const C = extern struct {
-        zig: *State,
+    roots: ?[*]janet.Value,
+    root_count: usize,
+    root_capacity: usize,
 
-        blocks: ?*janet.gc.Object,
-        blocks_weak: ?*janet.gc.Object,
-        blocks_count: usize,
-        gc_interval: usize,
-        gc_next_collection: usize,
-        gc_suspend: c_int,
-        gc_mark_phase: c_int,
+    pub fn init_zig(self: *Runtime.C) Allocator.Error!void {
+        const shared = &janet.Runtime.state_shared;
+        const s = try shared.gpa.create(Runtime);
+        s.* = .{
+            .gpa = shared.gpa,
+            .arena_per_gc = .init,
+            .c = self,
+            .symbol_pool = .empty,
+            .symbol_generator = .init,
+        };
+        self.zig = s;
+    }
 
-        roots: ?[*]janet.Value,
-        root_count: usize,
-        root_capacity: usize,
-
-        pub fn init_zig(self: *State.C) Allocator.Error!void {
-            const shared = &janet.runtime.state_shared;
-            const s = try shared.gpa.create(State);
-            s.* = .{
-                .gpa = shared.gpa,
-                .arena_per_gc = .init,
-                .c = self,
-                .symbol_pool = .empty,
-                .symbol_generator = .init,
-            };
-            self.zig = s;
-        }
-
-        pub fn deinit_zig(self: *State.C) void {
-            self.zig.gpa.destroy(self.zig);
-        }
-    };
-
-    pub fn get() *State {
-        const c_state = @extern(*C, .{ .name = "janet_vm", .is_thread_local = true });
-        return c_state.zig;
+    pub fn deinit_zig(self: *Runtime.C) void {
+        self.zig.gpa.destroy(self.zig);
     }
 };
 
+pub fn default() *Runtime {
+    const c_state = @extern(*C, .{ .name = "janet_vm", .is_thread_local = true });
+    return c_state.zig;
+}
+
 /// Initialized in `main`
-pub var state_shared: State.Shared = undefined;
+pub var state_shared: Runtime.Shared = undefined;

@@ -7,5 +7,5 @@ comptime {
 }
 
 fn begin(count: i32) callconv(.c) Struct.Extern.Pointer {
-    return .wrap(Struct.begin(.get(), @intCast(count)) catch janet.oom());
+    return .wrap(Struct.begin(.default(), @intCast(count)) catch janet.oom());
 }

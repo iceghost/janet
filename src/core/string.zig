@@ -10,7 +10,7 @@ comptime {
 }
 
 fn begin(size: i32) callconv(.c) String.Extern.Pointer {
-    const handle, const head, _ = String.begin_deferred(.get(), @intCast(size)) catch janet.oom();
+    const handle, const head, _ = String.begin_deferred(.default(), @intCast(size)) catch janet.oom();
     handle.finish(.string);
     return .wrap(head);
 }
@@ -22,5 +22,5 @@ fn end(string: String.Extern.Pointer) callconv(.c) String.Extern.Pointer {
 }
 
 fn default(bytes_ptr: ?[*]const u8, size: i32) callconv(.c) String.Extern.Pointer {
-    return .wrap(String.from_bytes(.get(), x.c_slice(bytes_ptr, size)) catch janet.oom());
+    return .wrap(String.from_bytes(.default(), x.c_slice(bytes_ptr, size)) catch janet.oom());
 }

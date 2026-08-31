@@ -21,7 +21,7 @@ comptime {
 /// during thread initialization, in which the threadlocal state is not
 /// initialized yet.
 fn allocator() std.mem.Allocator {
-    return janet.runtime.state_shared.gpa;
+    return janet.Runtime.state_shared.gpa;
 }
 
 fn malloc(size: usize) callconv(.c) ?[*]align(alignment_size) u8 {
@@ -56,9 +56,9 @@ fn smalloc(size: usize) callconv(.c) [*]align(alignment_size) u8 {
 }
 
 fn smalloc_error(size: usize) std.mem.Allocator.Error![*]align(alignment_size) u8 {
-    const state = janet.State.get();
-    var arena = state.arena_per_gc.promote(state.gpa);
-    defer state.arena_per_gc = arena.state;
+    const rt = janet.Runtime.default();
+    var arena = rt.arena_per_gc.promote(rt.gpa);
+    defer rt.arena_per_gc = arena.state;
 
     const memory = try janet.gc.alloc(arena.allocator(), size);
     return memory.ptr;
@@ -73,9 +73,9 @@ fn scalloc(count: usize, element_size: usize) callconv(.c) [*]align(alignment_si
 
 fn srealloc(pointer: ?[*]align(alignment_size) u8, new_size: usize) callconv(.c) [*]align(alignment_size) u8 {
     const p = pointer orelse return smalloc(new_size);
-    const state = janet.State.get();
-    var arena = state.arena_per_gc.promote(state.gpa);
-    defer state.arena_per_gc = arena.state;
+    const rt = janet.Runtime.default();
+    var arena = rt.arena_per_gc.promote(rt.gpa);
+    defer rt.arena_per_gc = arena.state;
 
     const memory = janet.gc.realloc(arena.allocator(), p, new_size) catch janet.oom();
     return memory.ptr;
@@ -83,17 +83,17 @@ fn srealloc(pointer: ?[*]align(alignment_size) u8, new_size: usize) callconv(.c)
 
 fn sfree(pointer: ?[*]align(alignment_size) u8) callconv(.c) void {
     const memory = pointer orelse return;
-    const state = janet.State.get();
-    var arena = state.arena_per_gc.promote(state.gpa);
-    defer state.arena_per_gc = arena.state;
+    const rt = janet.Runtime.default();
+    var arena = rt.arena_per_gc.promote(rt.gpa);
+    defer rt.arena_per_gc = arena.state;
 
     janet.gc.free(arena.allocator(), memory);
 }
 
 fn sfreeall() callconv(.c) void {
-    const state = janet.State.get();
-    var arena = state.arena_per_gc.promote(state.gpa);
-    defer state.arena_per_gc = arena.state;
+    const rt = janet.Runtime.default();
+    var arena = rt.arena_per_gc.promote(rt.gpa);
+    defer rt.arena_per_gc = arena.state;
 
     _ = arena.reset(.free_all);
 }

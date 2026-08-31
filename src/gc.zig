@@ -4,7 +4,6 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 
 const janet = @import("janet");
-const State = janet.runtime.State;
 const x = @import("x");
 
 pub const alignment: mem.Alignment = .of(std.c.max_align_t);
@@ -71,7 +70,7 @@ const AllocationHead = extern struct {
 };
 
 pub const Handle = struct {
-    rt: *State,
+    rt: *janet.Runtime,
     object: *Object,
     size: u32,
 
@@ -96,7 +95,7 @@ pub const Handle = struct {
 };
 
 pub fn create_deferred(
-    rt: *State,
+    rt: *janet.Runtime,
     comptime Head: type,
     comptime Elem: type,
     count: u32,

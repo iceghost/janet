@@ -34,12 +34,12 @@ extern fn janet_gcroot(root: Value) callconv(.c) void;
 pub fn main(init: std.process.Init) !u8 {
     const argv = try init.minimal.args.toSlice(init.arena.allocator());
 
-    janet.runtime.state_shared = .{
+    janet.Runtime.state_shared = .{
         .gpa = init.gpa,
     };
     _ = c.janet_init();
 
-    const rt = janet.State.get();
+    const rt = janet.Runtime.default();
     const replacements = janet_table(0);
     janet_table_put(
         replacements,

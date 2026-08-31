@@ -220,7 +220,7 @@ pub const String = extern struct {
     }
 
     /// `end()` and `handle.finish()` must be called afterwards
-    pub fn begin_deferred(rt: *janet.State, size: u32) Allocator.Error!struct { janet.gc.Handle, *String, [:0]u8 } {
+    pub fn begin_deferred(rt: *janet.Runtime, size: u32) Allocator.Error!struct { janet.gc.Handle, *String, [:0]u8 } {
         assert(size <= size_max);
         const handle, const head, const data = try janet.gc.create_deferred(rt, String, u8, size + 1);
         head.* = .{
@@ -239,7 +239,7 @@ pub const String = extern struct {
         s.hash = @truncate(std.hash_map.hashString(data[0..s.size]));
     }
 
-    pub fn from_bytes(rt: *janet.State, bytes: []const u8) Allocator.Error!*String {
+    pub fn from_bytes(rt: *janet.Runtime, bytes: []const u8) Allocator.Error!*String {
         const handle, const s, const data = try begin_deferred(rt, @intCast(bytes.len));
         @memcpy(data, bytes);
         s.end();
@@ -247,7 +247,7 @@ pub const String = extern struct {
         return s;
     }
 
-    pub fn intern(rt: *janet.State, bytes: []const u8) Allocator.Error!*String {
+    pub fn intern(rt: *janet.Runtime, bytes: []const u8) Allocator.Error!*String {
         return rt.symbol_pool.intern(rt, bytes);
     }
 
@@ -292,12 +292,12 @@ pub const String = extern struct {
             self.* = .empty;
         }
 
-        pub fn intern(self: *Pool, rt: *janet.State, bs: []const u8) error{OutOfMemory}!*String {
+        pub fn intern(self: *Pool, rt: *janet.Runtime, bs: []const u8) error{OutOfMemory}!*String {
             const gop = try self.get_or_put(rt, bs);
             return gop.key_ptr.*;
         }
 
-        fn get_or_put(self: *Pool, rt: *janet.State, bs: []const u8) error{OutOfMemory}!Map.GetOrPutResult {
+        fn get_or_put(self: *Pool, rt: *janet.Runtime, bs: []const u8) error{OutOfMemory}!Map.GetOrPutResult {
             const hash_value: u32 = @truncate(std.hash_map.hashString(bs));
 
             const result = try self.map.getOrPutAdapted(rt.gpa, bs, Adapter{ .hash_value = hash_value });
@@ -349,7 +349,7 @@ pub const String = extern struct {
         }
 
         /// Generate a unique symbol for (gensym)
-        pub fn next(self: *Generator, rt: *janet.State) Allocator.Error!*String {
+        pub fn next(self: *Generator, rt: *janet.Runtime) Allocator.Error!*String {
             // There are 64^6 possible suffixes,
             // which is enough for resolving collisions.
             while (true) {
@@ -399,7 +399,7 @@ pub const Struct = extern struct {
         };
     };
 
-    pub fn begin(rt: *janet.State, count: u32) Allocator.Error!*Struct {
+    pub fn begin(rt: *janet.Runtime, count: u32) Allocator.Error!*Struct {
         const doubled = std.math.mul(u32, count, 2) catch return error.OutOfMemory;
         const minimum = std.math.add(u32, doubled, 1) catch return error.OutOfMemory;
         const capacity = std.math.ceilPowerOfTwo(u32, minimum) catch return error.OutOfMemory;
@@ -449,7 +449,7 @@ pub const Table = extern struct {
         }
     };
 
-    pub fn create_deferred(rt: *janet.State) Allocator.Error!struct { janet.gc.Handle, *Table } {
+    pub fn create_deferred(rt: *janet.Runtime) Allocator.Error!struct { janet.gc.Handle, *Table } {
         const handle, const table, _ = try janet.gc.create_deferred(rt, Table, u8, 0);
         table.* = .{
             .gc = .disabled,
@@ -528,7 +528,7 @@ pub const Tuple = extern struct {
     column: i32,
     data: [0]Value = .{},
 
-    pub fn create_from_slice(rt: *janet.State, values: []const Value) Allocator.Error!*Tuple {
+    pub fn create_from_slice(rt: *janet.Runtime, values: []const Value) Allocator.Error!*Tuple {
         const handle, const head, const elems = try janet.gc.create_deferred(rt, Tuple, Value, @intCast(values.len));
         defer handle.finish(.tuple);
 

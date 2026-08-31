@@ -28,12 +28,12 @@ fn weakkv(capacity: i32) callconv(.c) *Table.Extern {
 }
 
 fn create_typed(requested_capacity: i32, object_type: janet.gc.ObjectType) std.mem.Allocator.Error!*Table.Extern {
-    const s = janet.State.get();
-    const handle, const table = try Table.create_deferred(s);
-    errdefer janet.gc.free(s.gpa, @ptrCast(table));
+    const rt = janet.Runtime.default();
+    const handle, const table = try Table.create_deferred(rt);
+    errdefer janet.gc.free(rt.gpa, @ptrCast(table));
 
-    try table.reserve_total(s.gpa, @intCast(requested_capacity));
-    s.c.gc_next_collection += @as(usize, table.capacity) * @sizeOf([2]janet.Value);
+    try table.reserve_total(rt.gpa, @intCast(requested_capacity));
+    rt.c.gc_next_collection += @as(usize, table.capacity) * @sizeOf([2]janet.Value);
 
     handle.finish(object_type);
 

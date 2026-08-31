@@ -16,34 +16,34 @@ comptime {
 }
 
 fn init() callconv(.c) void {
-    const rt = janet.State.get();
+    const rt = janet.Runtime.default();
     rt.symbol_pool.init(rt.gpa) catch janet.oom();
 }
 
 fn deinit() callconv(.c) void {
-    const rt = janet.State.get();
+    const rt = janet.Runtime.default();
     rt.symbol_pool.deinit(rt.gpa);
     rt.symbol_generator.reset();
 }
 
 fn symbol_deinit(sym: String.Extern.Pointer) callconv(.c) void {
-    janet.State.get().symbol_pool.remove(sym.cast_head());
+    janet.Runtime.default().symbol_pool.remove(sym.cast_head());
 }
 
 fn symbol(bytes_ptr: ?[*]const u8, size: i32) callconv(.c) String.Extern.Pointer {
-    const rt = janet.State.get();
+    const rt = janet.Runtime.default();
     const string = rt.symbol_pool.intern(rt, x.c_slice(bytes_ptr, size)) catch janet.oom();
     return .wrap(string);
 }
 
 fn csymbol(cstring: ?[*:0]const u8) callconv(.c) String.Extern.Pointer {
-    const rt = janet.State.get();
+    const rt = janet.Runtime.default();
     const string = rt.symbol_pool.intern(rt, std.mem.span(cstring.?)) catch janet.oom();
     return .wrap(string);
 }
 
 fn symbol_gen() callconv(.c) String.Extern.Pointer {
-    const rt = janet.State.get();
+    const rt = janet.Runtime.default();
     const string = rt.symbol_generator.next(rt) catch janet.oom();
     return .wrap(string);
 }
