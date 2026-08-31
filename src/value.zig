@@ -434,7 +434,7 @@ pub const Table = extern struct {
         .count = 0,
         .capacity = 0,
         .count_deleted = 0,
-        .data = undefined,
+        .data = &.{},
         .proto = null,
     };
 
@@ -479,12 +479,15 @@ pub const Table = extern struct {
 
     pub fn clear_and_free(self: *Table, rt: *janet.Runtime) void {
         const flags = self.gc.flags_typed(Flags);
-        if (flags.stack) {
-            var scratch = rt.arena_per_gc.promote(rt.gpa);
-            defer rt.arena_per_gc = scratch.state;
-            janet.gc.free(scratch.allocator(), @ptrCast(self.data));
-        } else {
-            janet.gc.free(rt.gpa, @ptrCast(self.data));
+        // remove this when gc.free and stuff is gone for good
+        if (self.capacity > 0) {
+            if (flags.stack) {
+                var scratch = rt.arena_per_gc.promote(rt.gpa);
+                defer rt.arena_per_gc = scratch.state;
+                janet.gc.free(scratch.allocator(), @ptrCast(self.data));
+            } else {
+                janet.gc.free(rt.gpa, @ptrCast(self.data));
+            }
         }
         const gc = self.gc;
         self.* = .empty;
@@ -492,12 +495,11 @@ pub const Table = extern struct {
     }
 
     pub fn reserve_total(self: *Table, rt: *janet.Runtime, requested: u32) Allocator.Error!void {
+        if (requested <= self.capacity) return;
         return self.reserve_total_precise(rt, grow_capacity(requested));
     }
 
-    pub fn reserve_total_precise(self: *Table, rt: *janet.Runtime, total: u32) Allocator.Error!void {
-        if (total <= self.capacity) return;
-
+    fn reserve_total_precise(self: *Table, rt: *janet.Runtime, total: u32) Allocator.Error!void {
         var scratch = rt.arena_per_gc.promote(rt.gpa);
         defer rt.arena_per_gc = scratch.state;
 
@@ -531,14 +533,64 @@ pub const Table = extern struct {
         };
     }
 
-    pub fn put(self: *Table, key: Value, val: Value) void {
+    pub fn put(self: *Table, rt: *janet.Runtime, key: Value, val: Value) Allocator.Error!void {
         if (key.checktype(.nil)) return;
-        if (key.checktype(.number) and math.isNaN(key.unwrap().number)) return;
+        if (key.checktype(.number) and math.isNan(key.repr.float)) return;
         if (val.checktype(.nil)) {
-            self.remove(key);
+            _ = janet_table_remove(.wrap(self), key);
+            return;
         }
 
-        // TODO
+        var bucket = janet_table_find(.wrap(self), key);
+        if (bucket != null and !bucket.?.key.checktype(.nil)) {
+            bucket.?.val = val;
+            return;
+        }
+
+        if (bucket == null or self.count +| self.count_deleted +| 1 > self.capacity / 2) {
+            try self.reserve_total_precise(rt, grow_capacity(self.count));
+        }
+
+        bucket = janet_table_find(.wrap(self), key);
+        if (bucket.?.val.checktype(.boolean)) self.count_deleted -= 1;
+        bucket.?.* = .{ .key = key, .val = val };
+        self.count += 1;
+    }
+
+    fn put_no_overwrite(self: *Table, rt: *janet.Runtime, key: Value, val: Value) Allocator.Error!void {
+        var bucket = janet_table_find(.wrap(self), key);
+        if (bucket != null and !bucket.?.key.checktype(.nil)) return;
+
+        if (bucket == null or self.count +| self.count_deleted +| 1 > self.capacity / 2) {
+            try self.reserve_total_precise(rt, grow_capacity(self.count));
+        }
+
+        bucket = janet_table_find(.wrap(self), key);
+        if (bucket.?.val.checktype(.boolean)) self.count_deleted -= 1;
+        bucket.?.* = .{ .key = key, .val = val };
+        self.count += 1;
+    }
+
+    /// Flatten all tables in the proto chain into a new table
+    pub fn flatten(self: *Table, rt: *janet.Runtime) Allocator.Error!*Table {
+        const handle, const flattened = try create_deferred(rt);
+        errdefer janet.gc.free(rt.gpa, @ptrCast(flattened));
+
+        try flattened.reserve_total(rt, self.capacity);
+        errdefer flattened.clear_and_free(rt);
+
+        var current: ?*Table = self;
+        while (current) |table| : (current = table.proto) {
+            for (table.data[0..table.capacity]) |entry| {
+                if (!entry.key.checktype(.nil)) {
+                    try flattened.put_no_overwrite(rt, entry.key, entry.val);
+                }
+            }
+        }
+
+        rt.c.gc_next_collection += @as(usize, flattened.capacity) * @sizeOf(Pair);
+        handle.finish(.table);
+        return flattened;
     }
 };
 
@@ -577,6 +629,7 @@ pub const Tuple = extern struct {
 
 extern fn janet_hash(v: Value) callconv(.c) i32;
 extern fn janet_table_find(table: *Table.Extern, key: Value) callconv(.c) ?*Pair;
+extern fn janet_table_remove(table: *Table.Extern, key: Value) callconv(.c) Value;
 
 pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));

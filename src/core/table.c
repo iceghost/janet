@@ -25,58 +25,13 @@
 #include <janet.h>
 #include "gc.h"
 #include "util.h"
-#include <math.h>
 #endif
 
-#define JANET_TABLE_FLAG_STACK 0x10000
-
-static void *janet_memalloc_empty_local(int32_t count) {
-    int32_t i;
-    void *mem = janet_smalloc((size_t) count * sizeof(JanetKV));
-    JanetKV *mmem = (JanetKV *)mem;
-    for (i = 0; i < count; i++) {
-        JanetKV *kv = mmem + i;
-        kv->key = janet_wrap_nil();
-        kv->value = janet_wrap_nil();
-    }
-    return mem;
-}
 
 /* Find the bucket that contains the given key. Will also return
  * bucket where key should go if not in the table. */
 JanetKV *janet_table_find(JanetTable *t, Janet key) {
     return (JanetKV *) janet_dict_find(t->data, t->capacity, key);
-}
-
-/* Resize the dictionary table. */
-static void janet_table_rehash(JanetTable *t, int32_t size) {
-    JanetKV *olddata = t->data;
-    JanetKV *newdata;
-    int islocal = t->gc.flags & JANET_TABLE_FLAG_STACK;
-    if (islocal) {
-        newdata = (JanetKV *) janet_memalloc_empty_local(size);
-    } else {
-        newdata = (JanetKV *) janet_memalloc_empty(size);
-        if (NULL == newdata) {
-            JANET_OUT_OF_MEMORY;
-        }
-    }
-    int32_t oldcapacity = t->capacity;
-    t->data = newdata;
-    t->capacity = size;
-    t->deleted = 0;
-    for (int32_t i = 0; i < oldcapacity; i++) {
-        JanetKV *kv = olddata + i;
-        if (!janet_checktype(kv->key, JANET_NIL)) {
-            JanetKV *newkv = janet_table_find(t, kv->key);
-            *newkv = *kv;
-        }
-    }
-    if (islocal) {
-        janet_sfree(olddata);
-    } else {
-        janet_free(olddata);
-    }
 }
 
 /* Get a value out of the table */
@@ -137,47 +92,6 @@ Janet janet_table_remove(JanetTable *t, Janet key) {
     }
 }
 
-/* Put a value into the object */
-void janet_table_put(JanetTable *t, Janet key, Janet value) {
-    if (janet_checktype(key, JANET_NIL)) return;
-    if (janet_checktype(key, JANET_NUMBER) && isnan(janet_unwrap_number(key))) return;
-    if (janet_checktype(value, JANET_NIL)) {
-        janet_table_remove(t, key);
-    } else {
-        JanetKV *bucket = janet_table_find(t, key);
-        if (NULL != bucket && !janet_checktype(bucket->key, JANET_NIL)) {
-            bucket->value = value;
-        } else {
-            if (NULL == bucket || 2 * (t->count + t->deleted + 1) > t->capacity) {
-                janet_table_rehash(t, janet_tablen(2 * t->count + 2));
-            }
-            bucket = janet_table_find(t, key);
-            if (janet_checktype(bucket->value, JANET_BOOLEAN))
-                --t->deleted;
-            bucket->key = key;
-            bucket->value = value;
-            ++t->count;
-        }
-    }
-}
-
-/* Used internally so don't check arguments
- * Put into a table, but if the key already exists do nothing. */
-static void janet_table_put_no_overwrite(JanetTable *t, Janet key, Janet value) {
-    JanetKV *bucket = janet_table_find(t, key);
-    if (NULL != bucket && !janet_checktype(bucket->key, JANET_NIL))
-        return;
-    if (NULL == bucket || 2 * (t->count + t->deleted + 1) > t->capacity) {
-        janet_table_rehash(t, janet_tablen(2 * t->count + 2));
-    }
-    bucket = janet_table_find(t, key);
-    if (janet_checktype(bucket->value, JANET_BOOLEAN))
-        --t->deleted;
-    bucket->key = key;
-    bucket->value = value;
-    ++t->count;
-}
-
 /* Clear a table */
 void janet_table_clear(JanetTable *t) {
     int32_t capacity = t->capacity;
@@ -236,20 +150,7 @@ const JanetKV *janet_table_to_struct(JanetTable *t) {
     return janet_struct_end(st);
 }
 
-JanetTable *janet_table_proto_flatten(JanetTable *t) {
-    JanetTable *newTable = janet_table(0);
-    while (t) {
-        JanetKV *kv = t->data;
-        JanetKV *end = t->data + t->capacity;
-        while (kv < end) {
-            if (!janet_checktype(kv->key, JANET_NIL))
-                janet_table_put_no_overwrite(newTable, kv->key, kv->value);
-            kv++;
-        }
-        t = t->proto;
-    }
-    return newTable;
-}
+JanetTable *janet_table_proto_flatten(JanetTable *t);
 
 /* C Functions */
 

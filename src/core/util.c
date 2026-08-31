@@ -166,6 +166,7 @@ void safe_memcpy(void *dest, const void *src, size_t len) {
 /* Helper to find a value in a Janet struct or table. Returns the bucket
  * containing the key, or the first empty bucket if there is no such key. */
 const JanetKV *janet_dict_find(const JanetKV *buckets, int32_t cap, Janet key) {
+    if (cap == 0) return NULL;
     int32_t index = janet_maphash(cap, janet_hash(key));
     int32_t i;
     const JanetKV *first_bucket = NULL;
@@ -203,6 +204,7 @@ const JanetKV *janet_dict_find(const JanetKV *buckets, int32_t cap, Janet key) {
 const JanetKV *janet_dict_find_keyword(
     const JanetKV *buckets, int32_t cap,
     const uint8_t *cstr, int32_t cstr_len) {
+    if (cap == 0) return NULL;
     int32_t hash = janet_string_calchash(cstr, cstr_len);
     int32_t index = janet_maphash(cap, hash);
     int32_t i;
