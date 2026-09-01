@@ -59,7 +59,7 @@ pub const Array = extern struct {
         return array;
     }
 
-    pub fn create_from(rt: *janet.Runtime, elements: []const janet.Value) Allocator.Error!*Array {
+    pub fn from_slice(rt: *janet.Runtime, elements: []const janet.Value) Allocator.Error!*Array {
         const count: u32 = @intCast(elements.len);
 
         const handle, const array = try create_deferred(rt);
@@ -193,6 +193,18 @@ pub const Box = extern struct {
 
     pub fn array(s: *Array) Box {
         return .{ .repr = .box_any(.array, s) };
+    }
+
+    pub fn tuple(t: *Tuple) Box {
+        return .{ .repr = .box_any(.tuple, Tuple.Extern.Pointer.wrap(t).ptr) };
+    }
+
+    pub fn table(t: *Table) Box {
+        return .{ .repr = .box_any(.table, t) };
+    }
+
+    pub fn number(n: f64) Box {
+        return .{ .repr = .{ .float = n } };
     }
 
     pub fn wrap_keyword(s: *String) Box {
@@ -1171,10 +1183,71 @@ pub const Table = extern struct {
                 .redef = redef,
             };
         }
+
+        fn set_doc(binding: *Table, rt: *janet.Runtime, doc: []const u8) !void {
+            try binding.put(rt, try .keyword(rt, "doc"), try .string(rt, doc));
+        }
+
+        fn set_sourcemap(
+            binding: *Table,
+            rt: *janet.Runtime,
+            source_file: []const u8,
+            source_line: i32,
+        ) !void {
+            const tup: *Tuple = try .from_slice(rt, &.{
+                try .string(rt, source_file),
+                .number(@floatFromInt(source_line)),
+                .number(1),
+            });
+            try binding.put(rt, try .keyword(rt, "source-map"), .tuple(tup));
+        }
+
+        fn set_value(binding: *Table, rt: *janet.Runtime, value: Value) !void {
+            try binding.put(rt, try .keyword(rt, "value"), value);
+        }
+
+        fn set_ref(binding: *Table, rt: *janet.Runtime, value: Value) !void {
+            const cell: *Array = try .from_slice(rt, &.{value});
+            try binding.put(rt, try .keyword(rt, "ref"), .array(cell));
+        }
     };
 
     pub fn resolve(env: *Table, sym: *String) Binding {
         return .from_value(env.get(.wrap_symbol(sym)) orelse return .none);
+    }
+
+    pub const BindOptions = struct {
+        mutable: bool = false,
+        doc: ?[]const u8 = null,
+        source: ?Source = null,
+
+        pub const Source = struct {
+            file: []const u8,
+            line: i32,
+        };
+    };
+
+    /// Create a binding for `(def ...)` and `(var ...)` forms
+    pub fn bind(
+        env: *Table,
+        rt: *janet.Runtime,
+        name: []const u8,
+        value: Value,
+        options: BindOptions,
+    ) Allocator.Error!void {
+        const binding: *Table = try .create(rt);
+        if (options.mutable) {
+            try Binding.set_ref(binding, rt, value);
+        } else {
+            try Binding.set_value(binding, rt, value);
+        }
+        if (options.doc) |d| {
+            try Binding.set_doc(binding, rt, d);
+        }
+        if (options.source) |s| {
+            try Binding.set_sourcemap(binding, rt, s.file, s.line);
+        }
+        try env.put(rt, try .symbol(rt, name), .table(binding));
     }
 };
 
@@ -1236,7 +1309,7 @@ pub const Tuple = extern struct {
         for (self.slice()) |v| self.hash = hash_mix(self.hash, hash(v));
     }
 
-    pub fn create_from_slice(rt: *janet.Runtime, values: []const Value) Allocator.Error!*Tuple {
+    pub fn from_slice(rt: *janet.Runtime, values: []const Value) Allocator.Error!*Tuple {
         const tuple = try begin(rt, @intCast(values.len));
         @memcpy(tuple.slice_assume_wip(), values);
         tuple.end();

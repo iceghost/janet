@@ -7,6 +7,7 @@ pub const janet_options = .{
     .nanbox = true,
 };
 
+extern fn janet_core_env(?*janet.value.Table) callconv(.c) *janet.value.Table;
 extern fn array_test() callconv(.c) c_int;
 extern fn buffer_test() callconv(.c) c_int;
 extern fn number_test() callconv(.c) c_int;
@@ -33,17 +34,17 @@ pub fn main(init: std.process.Init) !u8 {
     _ = system_test();
     _ = table_test();
 
-    const env = c.janet_core_env(null);
+    const env = janet_core_env(null);
 
     const args: *janet.Array = try .create(rt);
     try args.ensure(rt, @intCast(argv.len), 1);
     for (argv) |arg| {
         try args.push(rt, try .string(rt, arg));
     }
-    c.janet_def(env, "boot/args", c.janet_wrap_array(@ptrCast(args)), "Command line arguments.");
+    try env.bind(rt, "boot/args", .array(args), .{ .doc = "Command line arguments." });
 
-    const config = c.janet_table(0);
-    c.janet_def(env, "boot/config", c.janet_wrap_table(config), "Boot options");
+    const config: *janet.value.Table = try .create(rt);
+    try env.bind(rt, "boot/config", .table(config), .{ .doc = "Boot options." });
 
     var source_dir = try std.Io.Dir.cwd().openDir(io, argv[1], .{});
     defer source_dir.close(io);
@@ -58,7 +59,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer allocator.free(boot_source);
 
     const status = c.janet_dobytes(
-        env,
+        @ptrCast(env),
         boot_source.ptr,
         @intCast(boot_source.len),
         "boot.janet",

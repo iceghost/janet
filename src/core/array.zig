@@ -31,7 +31,7 @@ fn create_typed(capacity: i32, object_type: janet.gc.ObjectType) !*janet.Array.E
 }
 
 fn n(elements: ?[*]const janet.Value, count: i32) callconv(.c) *janet.Array.Extern {
-    const array = janet.Array.create_from(.default(), x.c_slice(elements, count)) catch janet.oom();
+    const array = janet.Array.from_slice(.default(), x.c_slice(elements, count)) catch janet.oom();
     return .wrap(array);
 }
 

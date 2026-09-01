@@ -311,45 +311,6 @@ const void *janet_strbinsearch(
     return NULL;
 }
 
-/* Add sourcemapping and documentation to a binding table */
-static void janet_add_meta(JanetTable *table, const char *doc, const char *source_file, int32_t source_line) {
-    if (doc) {
-        janet_table_put(table, janet_ckeywordv("doc"), janet_cstringv(doc));
-    }
-    if (source_file && source_line) {
-        Janet triple[3];
-        triple[0] = janet_cstringv(source_file);
-        triple[1] = janet_wrap_integer(source_line);
-        triple[2] = janet_wrap_integer(1);
-        Janet value = janet_wrap_tuple(janet_tuple_n(triple, 3));
-        janet_table_put(table, janet_ckeywordv("source-map"), value);
-    }
-}
-
-/* Add a def to an environment */
-void janet_def_sm(JanetTable *env, const char *name, Janet val, const char *doc, const char *source_file, int32_t source_line) {
-    JanetTable *subt = janet_table(2);
-    janet_table_put(subt, janet_ckeywordv("value"), val);
-    janet_add_meta(subt, doc, source_file, source_line);
-    janet_table_put(env, janet_csymbolv(name), janet_wrap_table(subt));
-}
-void janet_def(JanetTable *env, const char *name, Janet value, const char *doc) {
-    janet_def_sm(env, name, value, doc, NULL, 0);
-}
-
-/* Add a var to the environment */
-void janet_var_sm(JanetTable *env, const char *name, Janet val, const char *doc, const char *source_file, int32_t source_line) {
-    JanetArray *array = janet_array(1);
-    JanetTable *subt = janet_table(2);
-    janet_array_push(array, val);
-    janet_table_put(subt, janet_ckeywordv("ref"), janet_wrap_array(array));
-    janet_add_meta(subt, doc, source_file, source_line);
-    janet_table_put(env, janet_csymbolv(name), janet_wrap_table(subt));
-}
-void janet_var(JanetTable *env, const char *name, Janet val, const char *doc) {
-    janet_var_sm(env, name, val, doc, NULL, 0);
-}
-
 /* Registry functions */
 
 /* Put the registry in sorted order. */

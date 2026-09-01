@@ -20,5 +20,5 @@ fn end(tuple: Tuple.Extern.Pointer) callconv(.c) Tuple.Extern.Pointer {
 
 fn n(values_ptr: ?[*]const janet.Value, count: i32) callconv(.c) Tuple.Extern.Pointer {
     const values: []const janet.Value = x.c_slice(values_ptr, count);
-    return .wrap(Tuple.create_from_slice(.default(), values) catch janet.oom());
+    return .wrap(Tuple.from_slice(.default(), values) catch janet.oom());
 }
