@@ -20,7 +20,6 @@ extern fn janet_line_save_history() callconv(.c) void;
 extern fn janet_line_deinit() callconv(.c) void;
 extern fn janet_wrap_cfunction(cfun: CFunction) callconv(.c) Value;
 extern fn janet_core_env(replacements: *Table) callconv(.c) *Table;
-extern fn janet_resolve(env: *Table, symbol: String.Extern.Pointer, out: *Value) callconv(.c) c.JanetBindingType;
 extern fn janet_unwrap_function(value: Value) callconv(.c) *c.JanetFunction;
 extern fn janet_fiber(callee: *c.JanetFunction, capacity: i32, argc: i32, argv: [*]const Value) callconv(.c) *c.JanetFiber;
 extern fn janet_wrap_fiber(fiber: *c.JanetFiber) callconv(.c) Value;
@@ -59,8 +58,7 @@ pub fn main(init: std.process.Init) !u8 {
         try .string(rt, argv[0]),
     );
 
-    var main_function: Value = undefined;
-    _ = janet_resolve(env, .wrap(try .intern(rt, "cli-main")), &main_function);
+    const main_function = env.resolve(try .intern(rt, "cli-main")).value;
     const main_args: [1]Value = .{.array(args)};
     const fiber = janet_fiber(janet_unwrap_function(main_function), 64, 1, &main_args);
     janet_gcroot(janet_wrap_fiber(fiber));

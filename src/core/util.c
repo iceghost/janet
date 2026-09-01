@@ -563,57 +563,6 @@ void janet_core_cfuns_ext(JanetTable *env, const char *regprefix, const JanetReg
 }
 #endif
 
-JanetBinding janet_binding_from_entry(Janet entry) {
-    JanetTable *entry_table;
-    JanetBinding binding = {
-        JANET_BINDING_NONE,
-        janet_wrap_nil(),
-        JANET_BINDING_DEP_NONE
-    };
-
-    /* Check environment for entry */
-    if (!janet_checktype(entry, JANET_TABLE))
-        return binding;
-    entry_table = janet_unwrap_table(entry);
-
-    Janet deprecate = janet_table_get_keyword(entry_table, "deprecated");
-    int macro = janet_truthy(janet_table_get_keyword(entry_table, "macro"));
-    Janet value = janet_table_get_keyword(entry_table, "value");
-    Janet ref = janet_table_get_keyword(entry_table, "ref");
-
-    if (janet_checktype(deprecate, JANET_KEYWORD)) {
-        JanetKeyword depkw = janet_unwrap_keyword(deprecate);
-        if (!janet_cstrcmp(depkw, "relaxed")) {
-            binding.deprecation = JANET_BINDING_DEP_RELAXED;
-        } else if (!janet_cstrcmp(depkw, "normal")) {
-            binding.deprecation = JANET_BINDING_DEP_NORMAL;
-        } else if (!janet_cstrcmp(depkw, "strict")) {
-            binding.deprecation = JANET_BINDING_DEP_STRICT;
-        }
-    } else if (!janet_checktype(deprecate, JANET_NIL)) {
-        binding.deprecation = JANET_BINDING_DEP_NORMAL;
-    }
-
-    int ref_is_valid = janet_checktype(ref, JANET_ARRAY);
-    int redef = ref_is_valid && janet_truthy(janet_table_get_keyword(entry_table, "redef"));
-
-    if (macro) {
-        binding.value = redef ? ref : value;
-        binding.type = redef ? JANET_BINDING_DYNAMIC_MACRO : JANET_BINDING_MACRO;
-        return binding;
-    }
-
-    if (ref_is_valid) {
-        binding.value = ref;
-        binding.type = redef ? JANET_BINDING_DYNAMIC_DEF : JANET_BINDING_VAR;
-    } else {
-        binding.value = value;
-        binding.type = JANET_BINDING_DEF;
-    }
-
-    return binding;
-}
-
 /* If the value at the given address can be coerced to a byte view,
    return that byte view. If it can't, replace the value at the address
    with the result of janet_to_string, and return a byte view over that
@@ -665,21 +614,6 @@ JanetByteView janet_text_substitution(
         default:
             return memoize_byte_view(subst);
     }
-}
-
-JanetBinding janet_resolve_ext(JanetTable *env, const uint8_t *sym) {
-    Janet entry = janet_table_get(env, janet_wrap_symbol(sym));
-    return janet_binding_from_entry(entry);
-}
-
-JanetBindingType janet_resolve(JanetTable *env, const uint8_t *sym, Janet *out) {
-    JanetBinding binding = janet_resolve_ext(env, sym);
-    if (binding.type == JANET_BINDING_DYNAMIC_DEF || binding.type == JANET_BINDING_DYNAMIC_MACRO) {
-        *out = janet_array_peek(janet_unwrap_array(binding.value));
-    } else {
-        *out = binding.value;
-    }
-    return binding.type;
 }
 
 /* Resolve a symbol in the core environment. */

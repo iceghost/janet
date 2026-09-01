@@ -175,6 +175,8 @@ pub const Box = extern struct {
         nil: void,
         number: f64,
         string: *String,
+        array: *Array,
+        table: *Table,
     } {
         return switch (v.repr.unwrap_tag()) {
             .number => .{ .number = v.repr.float },
@@ -183,6 +185,8 @@ pub const Box = extern struct {
                 const p: String.Extern.Pointer = .{ .ptr = @ptrFromInt(v.repr.pointer_bits()) };
                 return .{ .string = p.cast_head() };
             },
+            .array => .{ .array = @ptrFromInt(v.repr.pointer_bits()) },
+            .table => .{ .table = @ptrFromInt(v.repr.pointer_bits()) },
             else => @panic("unimplemented"),
         };
     }
@@ -1077,6 +1081,100 @@ pub const Table = extern struct {
             if (!entry.key.checktype(.nil)) s.put(entry.key, entry.val, true);
         }
         return try s.end(rt);
+    }
+
+    /// Special type of entry in symbol tables
+    pub const Binding = extern struct {
+        type: Type,
+        value: Value,
+        deprecation: Deprecation,
+
+        pub const none: Binding = .{
+            .type = .none,
+            .value = .nil,
+            .deprecation = .none,
+        };
+
+        pub const Type = enum(c_int) {
+            none,
+            def,
+            @"var",
+            macro,
+            dynamic_def,
+            dynamic_macro,
+        };
+
+        pub const Deprecation = enum(c_int) {
+            none,
+            relaxed,
+            normal,
+            strict,
+        };
+
+        pub fn from_value(v: Value) Binding {
+            if (!v.checktype(.table)) return .none;
+            const table = v.unwrap().table;
+
+            const deprecate = get_deprecation(table);
+            const is_macro = get_macro(table);
+            if (get_ref_and_redef(table)) |r| {
+                return .{
+                    .deprecation = deprecate,
+                    .value = .array(r.ref),
+                    .type = if (is_macro and r.redef)
+                        .dynamic_macro
+                    else if (r.redef)
+                        .dynamic_def
+                    else
+                        .@"var",
+                };
+            } else {
+                return .{
+                    .deprecation = deprecate,
+                    .value = table.get_keyword("value") orelse Value.nil,
+                    .type = if (is_macro)
+                        .macro
+                    else
+                        .def,
+                };
+            }
+        }
+
+        fn get_deprecation(binding: *Table) Deprecation {
+            const kw = binding.get_keyword("deprecated") orelse return .none;
+            if (kw.checktype(.nil)) return .none;
+
+            if (kw.checktype(.keyword)) {
+                const kw_data = kw.unwrap().string;
+                if (mem.eql(u8, kw_data.slice(), "relaxed")) {
+                    return .relaxed;
+                } else if (mem.eql(u8, kw_data.slice(), "normal")) {
+                    return .normal;
+                } else if (mem.eql(u8, kw_data.slice(), "strict")) {
+                    return .strict;
+                }
+            }
+
+            return .normal;
+        }
+
+        fn get_macro(binding: *Table) bool {
+            return (binding.get_keyword("macro") orelse Value.nil).repr.truthy();
+        }
+
+        fn get_ref_and_redef(binding: *Table) ?struct { ref: *Array, redef: bool } {
+            const ref = binding.get_keyword("ref") orelse return null;
+            if (!ref.checktype(.array)) return null;
+            const redef = (binding.get_keyword("redef") orelse Value.nil).repr.truthy();
+            return .{
+                .ref = ref.unwrap().array,
+                .redef = redef,
+            };
+        }
+    };
+
+    pub fn resolve(env: *Table, sym: *String) Binding {
+        return .from_value(env.get(.wrap_symbol(sym)) orelse return .none);
     }
 };
 
