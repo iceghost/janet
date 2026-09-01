@@ -24,27 +24,8 @@
 #include "features.h"
 #include <janet.h>
 #include "symcache.h"
-#include "gc.h"
 #include "util.h"
 #endif
-
-/* Create a new empty tuple of the given size. This will return memory
- * which should be filled with Janets. The memory will not be collected until
- * janet_tuple_end is called. */
-Janet *janet_tuple_begin(int32_t length) {
-    size_t size = sizeof(JanetTupleHead) + ((size_t) length * sizeof(Janet));
-    JanetTupleHead *head = janet_gcalloc(JANET_MEMORY_TUPLE, size);
-    head->sm_line = -1;
-    head->sm_column = -1;
-    head->length = length;
-    return (Janet *)(head->data);
-}
-
-/* Finish building a tuple */
-const Janet *janet_tuple_end(Janet *tuple) {
-    janet_tuple_hash(tuple) = janet_array_calchash(tuple, janet_tuple_length(tuple));
-    return (const Janet *)tuple;
-}
 
 /* C Functions */
 

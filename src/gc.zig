@@ -112,7 +112,7 @@ pub fn create_deferred(
     const allocation = try alloc(rt.gpa, size);
     const head, const rest = x.mem_chop_head(allocation, Head);
     const obj: *Object = @ptrCast(head);
-    const body: []Elem = std.mem.bytesAsSlice(Elem, rest);
+    const body: []Elem = x.bytes_as_slice(Elem, rest);
     return .{ .{ .rt = rt, .object = obj, .size = size }, head, body };
 }
 

@@ -761,7 +761,7 @@ pub const Struct = extern struct {
     fn slice_assume_wip(s: *Struct) []Pair {
         const m = s.allocation();
         _, const data = x.mem_chop_head(m, Struct);
-        return std.mem.bytesAsSlice(Pair, data);
+        return x.bytes_as_slice(Pair, data);
     }
 };
 
@@ -1082,25 +1082,74 @@ pub const Tuple = extern struct {
     hash: u32,
     line: i32,
     column: i32,
-    data: [0]Value = .{},
 
-    pub fn create_from_slice(rt: *janet.Runtime, values: []const Value) Allocator.Error!*Tuple {
-        const handle, const head, const elems = try janet.gc.create_deferred(rt, Tuple, Value, @intCast(values.len));
+    pub const count_max = std.math.maxInt(i32);
+
+    pub const Extern = extern struct {
+        gc: janet.gc.Object,
+        count: i32,
+        hash: i32,
+        line: i32,
+        column: i32,
+        data: [0]Value = .{},
+
+        pub const Pointer = extern struct {
+            ptr: [*]align(@alignOf(Extern)) u8,
+
+            pub fn cast_head(self: Pointer) *Tuple {
+                const head = x.mem_recover_head(Extern, self.ptr);
+                assert(head.count >= 0);
+                return @ptrCast(head);
+            }
+
+            pub fn wrap(tuple: *Tuple) Pointer {
+                return .{ .ptr = @ptrCast(tuple.slice_assume_wip().ptr) };
+            }
+        };
+    };
+
+    pub fn begin(rt: *janet.Runtime, count: u32) Allocator.Error!*Tuple {
+        assert(count <= count_max);
+        const handle, const head, _ = try janet.gc.create_deferred(rt, Tuple, Value, count);
         defer handle.finish(.tuple);
-
-        @memcpy(elems, values);
 
         head.* = .{
             .gc = .disabled,
-            .count = @intCast(values.len),
-            // initial
-            .hash = 33,
+            .count = count,
+            .hash = undefined,
             .line = -1,
             .column = -1,
         };
-        for (values) |v| head.hash = hash_mix(head.hash, hash(v));
 
         return head;
+    }
+
+    pub fn end(self: *Tuple) void {
+        self.hash = 33;
+        for (self.slice()) |v| self.hash = hash_mix(self.hash, hash(v));
+    }
+
+    pub fn create_from_slice(rt: *janet.Runtime, values: []const Value) Allocator.Error!*Tuple {
+        const tuple = try begin(rt, @intCast(values.len));
+        @memcpy(tuple.slice_assume_wip(), values);
+        tuple.end();
+        return tuple;
+    }
+
+    fn allocation(tuple: *Tuple) []align(janet.gc.alignment_size) u8 {
+        const ptr: [*]align(janet.gc.alignment_size) u8 = @ptrCast(tuple);
+        return ptr[0 .. @sizeOf(Tuple) + @sizeOf(Value) * tuple.count];
+    }
+
+    pub fn slice(tuple: *Tuple) []const Value {
+        return tuple.slice_assume_wip();
+    }
+
+    /// Must not be mutated after hash is finalized
+    pub fn slice_assume_wip(tuple: *Tuple) []Value {
+        const memory = tuple.allocation();
+        _, const data = x.mem_chop_head(memory, Tuple);
+        return x.bytes_as_slice(Value, data);
     }
 };
 
