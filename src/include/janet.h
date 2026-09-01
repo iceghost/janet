@@ -984,13 +984,13 @@ struct JanetGCObject {
 struct JanetFiber {
     JanetGCObject gc; /* GC Object stuff */
     int32_t flags; /* More flags */
-    int32_t frame; /* Index of the stack frame */
-    int32_t stackstart; /* Beginning of next args */
+    int32_t maxstack; /* Arbitrary defined limit for stack overflow */
+    Janet *data; /* Dynamically resized stack memory */
     int32_t stacktop; /* Top of stack. Where values are pushed and popped from. */
     int32_t capacity; /* How big is the stack memory */
-    int32_t maxstack; /* Arbitrary defined limit for stack overflow */
+    int32_t frame; /* Index of the stack frame */
+    int32_t stackstart; /* Beginning of next args */
     JanetTable *env; /* Dynamic bindings table (usually current environment). */
-    Janet *data; /* Dynamically resized stack memory */
     JanetFiber *child; /* Keep linked list of fibers for restarting pending fibers */
     Janet last_value; /* Last returned value from a fiber */
 #ifdef JANET_EV

@@ -1345,20 +1345,12 @@ pub const Fiber = extern struct {
     gc: janet.gc.Object,
     /// More flags
     flags: Flags,
-    /// Index of the stack frame
-    frame: u32,
-    /// Beginning of next args
-    stackstart: u32,
-    /// Top of stack. Where values are pushed and popped from.
-    stacktop: u32,
-    /// How big is the stack memory
-    capacity: u32,
     /// Arbitrary defined limit for stack overflow
     maxstack: u32,
+    /// Stack memory
+    stack: Stack,
     /// Dynamic bindings table (usually current environment).
     env: *Table,
-    /// Dynamically resized stack memory
-    data: [*]Value,
     /// Keep linked list of fibers for restarting pending fibers
     child: ?*Fiber,
     /// Last returned value from a fiber
@@ -1413,5 +1405,14 @@ pub const Fiber = extern struct {
         new,
         alive,
         _,
+    };
+
+    pub const Stack = extern struct {
+        /// Dynamically resized stack memory
+        data: x.array_list.Fat(Value),
+        /// Index of the stack frame
+        frame: u32,
+        /// Beginning of next args
+        stackstart: u32,
     };
 };

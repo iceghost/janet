@@ -128,3 +128,11 @@ test "Thin reserves exact capacity and preserves items" {
     try std.testing.expectEqual(20, list.pop());
     try std.testing.expectEqual(10, list.pop());
 }
+
+pub fn Fat(comptime T: type) type {
+    return extern struct {
+        ptr: [*]T,
+        len: u32,
+        capacity: u32,
+    };
+}
