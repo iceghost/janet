@@ -1341,6 +1341,87 @@ pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));
 }
 
+/// A function definition. Contains information needed to instantiate closures.
+pub const FunctionDefinition = extern struct {
+    gc: janet.gc.Object,
+    /// Which environments to capture from the parent.
+    environments: ?[*]i32,
+    constants: ?[*]Value,
+    defs: ?[*]*FunctionDefinition,
+    bytecode: ?[*]janet.bytecode.Quadruple,
+    /// Bit set indicating which slots can be referenced by closures.
+    closure_bitset: ?[*]u32,
+
+    /// Debug information.
+    sourcemap: ?[*]SourceMapping,
+    source: ?[*:0]const u8,
+    name: ?[*:0]const u8,
+    symbolmap: ?[*]SymbolMapping,
+
+    flags: Flags,
+    /// The amount of stack space required for the function.
+    slotcount: i32,
+    /// Does not include varargs.
+    arity: i32,
+    /// Includes varargs.
+    min_arity: i32,
+    /// Includes varargs.
+    max_arity: i32,
+    constants_length: i32,
+    bytecode_length: i32,
+    environments_length: i32,
+    defs_length: i32,
+    symbolmap_length: i32,
+    named_args_count: i32,
+
+    pub const Flags = packed struct(i32) {
+        tag: u16,
+        vararg: bool,
+        needs_environment: bool,
+        has_symbolmap: bool,
+        has_name: bool,
+        has_source: bool,
+        has_defs: bool,
+        has_envs: bool,
+        has_sourcemap: bool,
+        has_closure_bitset: bool,
+        structarg: bool,
+        named_args: bool,
+        unused: u5 = 0,
+    };
+
+    pub const SourceMapping = extern struct {
+        line: i32,
+        column: i32,
+    };
+
+    pub const SymbolMapping = extern struct {
+        birth_pc: u32,
+        death_pc: u32,
+        slot_index: u32,
+        symbol: [*:0]const u8,
+    };
+};
+
+pub const Function = extern struct {
+    gc: janet.gc.Object,
+    def: *FunctionDefinition,
+    envs: [0]?*FunctionEnvironment = .{},
+};
+
+pub const FunctionEnvironment = extern struct {
+    gc: janet.gc.Object,
+    as: extern union {
+        fiber: ?*Fiber,
+        values: ?[*]Value,
+    },
+    /// Size of the environment.
+    length: i32,
+    /// Stack offset while values are on the stack. If this is zero or negative,
+    /// the environment is no longer on the stack.
+    offset: i32,
+};
+
 pub const Fiber = extern struct {
     gc: janet.gc.Object,
     /// More flags
@@ -1435,5 +1516,21 @@ pub const Fiber = extern struct {
             try self.reserve(rt, 1);
             self.data.append(v);
         }
+
+        pub const Frame = extern struct {
+            func: ?*Function,
+            pc: ?[*]janet.bytecode.Quadruple,
+            env: ?*FunctionEnvironment,
+            prev: u32,
+            flags: Frame.Flags,
+
+            pub const Flags = packed struct(u32) {
+                tailcall: bool,
+                entrance: bool,
+                unused: u29 = 0,
+                // used by marshalling
+                hasenv: bool,
+            };
+        };
     };
 };

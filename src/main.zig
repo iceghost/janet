@@ -20,8 +20,8 @@ extern fn janet_line_save_history() callconv(.c) void;
 extern fn janet_line_deinit() callconv(.c) void;
 extern fn janet_wrap_cfunction(cfun: CFunction) callconv(.c) Value;
 extern fn janet_core_env(replacements: *Table) callconv(.c) *Table;
-extern fn janet_unwrap_function(value: Value) callconv(.c) *c.JanetFunction;
-extern fn janet_fiber(callee: *c.JanetFunction, capacity: i32, argc: i32, argv: [*]const Value) callconv(.c) *c.JanetFiber;
+extern fn janet_unwrap_function(value: Value) callconv(.c) *janet.value.Function;
+extern fn janet_fiber(callee: *janet.value.Function, capacity: i32, argc: i32, argv: [*]const Value) callconv(.c) *c.JanetFiber;
 extern fn janet_wrap_fiber(fiber: *c.JanetFiber) callconv(.c) Value;
 extern fn janet_gcroot(root: Value) callconv(.c) void;
 

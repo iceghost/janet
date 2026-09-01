@@ -13,7 +13,7 @@ pub const SourceMapping = extern struct {
 };
 
 pub const Result = extern struct {
-    funcdef: ?*janet.c.JanetFuncDef,
+    funcdef: ?*janet.value.FunctionDefinition,
     @"error": ?[*:0]const u8,
     macrofiber: ?*janet.c.JanetFiber,
     error_mapping: SourceMapping,
@@ -79,7 +79,7 @@ pub const Scope = extern struct {
     /// Map of symbols to slots. Use a simple linear scan for symbols
     syms: ThinArrayList(SymPair),
     /// FuncDefs
-    defs: ThinArrayList(*janet.c.JanetFuncDef),
+    defs: ThinArrayList(*janet.value.FunctionDefinition),
     /// Register allocator
     ra: Register.Allocator,
     /// Upvalue allocator
