@@ -20,10 +20,7 @@ extern fn janet_line_save_history() callconv(.c) void;
 extern fn janet_line_deinit() callconv(.c) void;
 extern fn janet_wrap_cfunction(cfun: CFunction) callconv(.c) Value;
 extern fn janet_core_env(replacements: *Table) callconv(.c) *Table;
-extern fn janet_array(capacity: i32) callconv(.c) *Array.Extern;
-extern fn janet_array_push(array: *Array.Extern, value: Value) callconv(.c) void;
 extern fn janet_resolve(env: *Table, symbol: String.Extern.Pointer, out: *Value) callconv(.c) c.JanetBindingType;
-extern fn janet_wrap_array(array: *Array.Extern) callconv(.c) Value;
 extern fn janet_unwrap_function(value: Value) callconv(.c) *c.JanetFunction;
 extern fn janet_fiber(callee: *c.JanetFunction, capacity: i32, argc: i32, argv: [*]const Value) callconv(.c) *c.JanetFiber;
 extern fn janet_wrap_fiber(fiber: *c.JanetFiber) callconv(.c) Value;
@@ -50,9 +47,10 @@ pub fn main(init: std.process.Init) !u8 {
     janet_line_init();
 
     const env = janet_core_env(replacements);
-    const args = janet_array(@intCast(argv.len));
+    const args: *janet.Array = try .create(rt);
+    try args.ensure(rt, @intCast(argv.len), 1);
     for (argv[1..]) |arg| {
-        janet_array_push(args, .wrap_string(try .from_bytes(rt, arg)));
+        try args.push(rt, try .string(rt, arg));
     }
 
     try env.put(
@@ -63,7 +61,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     var main_function: Value = undefined;
     _ = janet_resolve(env, .wrap(try .intern(rt, "cli-main")), &main_function);
-    const main_args: [1]Value = .{janet_wrap_array(args)};
+    const main_args: [1]Value = .{.array(args)};
     const fiber = janet_fiber(janet_unwrap_function(main_function), 64, 1, &main_args);
     janet_gcroot(janet_wrap_fiber(fiber));
     fiber.*.env = @ptrCast(env);

@@ -15,15 +15,18 @@ comptime {
 }
 
 fn create(capacity: i32) callconv(.c) *janet.Array.Extern {
-    return create_typed(capacity, .array);
+    return create_typed(capacity, .array) catch janet.oom();
 }
 
 fn create_weak(capacity: i32) callconv(.c) *janet.Array.Extern {
-    return create_typed(capacity, .array_weak);
+    return create_typed(capacity, .array_weak) catch janet.oom();
 }
 
-fn create_typed(capacity: i32, object_type: janet.gc.ObjectType) *janet.Array.Extern {
-    const array = janet.Array.create(.default(), @intCast(capacity), object_type) catch janet.oom();
+fn create_typed(capacity: i32, object_type: janet.gc.ObjectType) !*janet.Array.Extern {
+    const handle, const array = try janet.Array.create_deferred(.default());
+    errdefer handle.destroy();
+    try array.ensure(.default(), @intCast(capacity), 1);
+    handle.finish(object_type);
     return .wrap(array);
 }
 

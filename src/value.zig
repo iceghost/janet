@@ -47,26 +47,31 @@ pub const Array = extern struct {
         }
     };
 
-    pub fn create(rt: *janet.Runtime, capacity: u32, object_type: janet.gc.ObjectType) Allocator.Error!*Array {
+    pub fn create_deferred(rt: *janet.Runtime) Allocator.Error!struct { janet.gc.Handle, *Array } {
         const handle, const array, _ = try janet.gc.create_deferred(rt, Array, u8, 0);
-        errdefer handle.destroy();
+        array.* = .empty;
+        return .{ handle, array };
+    }
 
-        const data = try rt.gpa.alloc(janet.Value, capacity);
-        array.* = .{
-            .gc = .disabled,
-            .count = 0,
-            .capacity = capacity,
-            .data = data.ptr,
-        };
-        rt.c.gc_next_collection += @as(usize, capacity) * @sizeOf(janet.Value);
-        handle.finish(object_type);
+    pub fn create(rt: *janet.Runtime) Allocator.Error!*Array {
+        const handle, const array = try create_deferred(rt);
+        handle.finish(.array);
         return array;
     }
 
     pub fn create_from(rt: *janet.Runtime, elements: []const janet.Value) Allocator.Error!*Array {
-        const array = try create(rt, @intCast(elements.len), .array);
-        @memcpy(array.data[0..elements.len], elements);
-        array.count = @intCast(elements.len);
+        const count: u32 = @intCast(elements.len);
+
+        const handle, const array = try create_deferred(rt);
+        errdefer handle.destroy();
+
+        try array.ensure(rt, count, 1);
+
+        @memcpy(array.data[0..count], elements);
+        array.count = count;
+
+        handle.finish(.array);
+
         return array;
     }
 
@@ -180,6 +185,10 @@ pub const Box = extern struct {
             },
             else => @panic("unimplemented"),
         };
+    }
+
+    pub fn array(s: *Array) Box {
+        return .{ .repr = .box_any(.array, s) };
     }
 
     pub fn wrap_keyword(s: *String) Box {

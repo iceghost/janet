@@ -25,6 +25,8 @@ pub fn main(init: std.process.Init) !u8 {
     _ = c.janet_init();
     defer c.janet_deinit();
 
+    const rt = janet.Runtime.default();
+
     _ = array_test();
     _ = buffer_test();
     _ = number_test();
@@ -33,11 +35,12 @@ pub fn main(init: std.process.Init) !u8 {
 
     const env = c.janet_core_env(null);
 
-    const args = c.janet_array(@intCast(argv.len));
+    const args: *janet.Array = try .create(rt);
+    try args.ensure(rt, @intCast(argv.len), 1);
     for (argv) |arg| {
-        c.janet_array_push(args, c.janet_cstringv(arg.ptr));
+        try args.push(rt, try .string(rt, arg));
     }
-    c.janet_def(env, "boot/args", c.janet_wrap_array(args), "Command line arguments.");
+    c.janet_def(env, "boot/args", c.janet_wrap_array(@ptrCast(args)), "Command line arguments.");
 
     const config = c.janet_table(0);
     c.janet_def(env, "boot/config", c.janet_wrap_table(config), "Boot options");
