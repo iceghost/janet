@@ -438,18 +438,6 @@ void janet_fiber_popframe(JanetFiber *fiber) {
     fiber->frame = frame->prevframe;
 }
 
-JanetFiberStatus janet_fiber_status(JanetFiber *f) {
-    return ((f)->flags & JANET_FIBER_STATUS_MASK) >> JANET_FIBER_STATUS_OFFSET;
-}
-
-JanetFiber *janet_current_fiber(void) {
-    return janet_vm.fiber;
-}
-
-JanetFiber *janet_root_fiber(void) {
-    return janet_vm.root_fiber;
-}
-
 /* CFuns */
 
 JANET_CORE_FN(cfun_fiber_getenv,

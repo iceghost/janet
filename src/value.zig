@@ -1340,3 +1340,78 @@ extern fn janet_compare(lhs: Value, rhs: Value) callconv(.c) c_int;
 pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));
 }
+
+pub const Fiber = extern struct {
+    gc: janet.gc.Object,
+    /// More flags
+    flags: Flags,
+    /// Index of the stack frame
+    frame: u32,
+    /// Beginning of next args
+    stackstart: u32,
+    /// Top of stack. Where values are pushed and popped from.
+    stacktop: u32,
+    /// How big is the stack memory
+    capacity: u32,
+    /// Arbitrary defined limit for stack overflow
+    maxstack: u32,
+    /// Dynamic bindings table (usually current environment).
+    env: *Table,
+    /// Dynamically resized stack memory
+    data: [*]Value,
+    /// Keep linked list of fibers for restarting pending fibers
+    child: ?*Fiber,
+    /// Last returned value from a fiber
+    last_value: Value,
+    /// Increment everytime fiber is scheduled by event loop
+    sched_id: u32,
+    /// Call this before starting scheduled fibers
+    ev_callback: ?*anyopaque,
+    /// which stream we are waiting on
+    ev_stream: ?*anyopaque,
+    /// Extra data for ev callback state. On windows, first element must be OVERLAPPED.
+    ev_state: ?*anyopaque,
+    /// Channel to push self to when complete
+    supervisor_channel: ?*anyopaque,
+
+    pub const Flags = packed struct(u32) {
+        ev_in_flight: bool = false,
+        @"error": bool = false,
+        debug: bool = false,
+        yield: bool = false,
+        user: u10 = 0,
+        unused1: u2 = 0,
+        status: Status = .dead,
+        resume_signal: bool = false,
+        unused2: bool = false,
+        breakpoint: bool = false,
+        resume_no_useval: bool = false,
+        resume_no_skip: bool = false,
+        did_longjump: bool = false,
+        unused3: u1 = 0,
+        /// Used by marshal
+        haschild: bool = false,
+        hasenv: bool = false,
+        unused: u1 = 0,
+    };
+
+    pub const Status = enum(u6) {
+        dead,
+        @"error",
+        debug,
+        pending,
+        user0,
+        user1,
+        user2,
+        user3,
+        user4,
+        user5,
+        user6,
+        user7,
+        user8,
+        user9,
+        new,
+        alive,
+        _,
+    };
+};

@@ -101,6 +101,11 @@ struct JanetVM {
     size_t root_count;
     size_t root_capacity;
 
+    /* The current running fiber on the current thread.
+     * Set and unset by functions in vm.c */
+    JanetFiber *fiber;
+    JanetFiber *root_fiber;
+
     /* Top level dynamic bindings */
     JanetTable *top_dyns;
 
@@ -113,11 +118,6 @@ struct JanetVM {
     /* If this flag is true, suspend on function calls and backwards jumps.
      * When this occurs, this flag will be reset to 0. */
     volatile JanetAtomicInt auto_suspend;
-
-    /* The current running fiber on the current thread.
-     * Set and unset by functions in vm.c */
-    JanetFiber *fiber;
-    JanetFiber *root_fiber;
 
     /* The current pointer to the inner most jmp_buf. The current
      * return point for panics. */

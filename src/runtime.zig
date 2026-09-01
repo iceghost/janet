@@ -35,6 +35,9 @@ pub const C = extern struct {
     root_count: usize,
     root_capacity: usize,
 
+    fiber: ?*janet.value.Fiber,
+    fiber_root: ?*janet.value.Fiber,
+
     pub fn init_zig(self: *Runtime.C) Allocator.Error!void {
         const shared = &janet.Runtime.state_shared;
         const s = try shared.gpa.create(Runtime);
