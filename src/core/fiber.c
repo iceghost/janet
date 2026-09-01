@@ -132,15 +132,6 @@ static void janet_fiber_grow(JanetFiber *fiber, int32_t needed) {
     janet_fiber_setcapacity(fiber, cap);
 }
 
-/* Push a value on the next stack frame */
-void janet_fiber_push(JanetFiber *fiber, Janet x) {
-    if (fiber->stacktop == INT32_MAX) janet_panic("stack overflow");
-    if (fiber->stacktop >= fiber->capacity) {
-        janet_fiber_grow(fiber, fiber->stacktop);
-    }
-    fiber->data[fiber->stacktop++] = x;
-}
-
 /* Push 2 values on the next stack frame */
 void janet_fiber_push2(JanetFiber *fiber, Janet x, Janet y) {
     if (fiber->stacktop >= INT32_MAX - 1) janet_panic("stack overflow");

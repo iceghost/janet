@@ -1414,5 +1414,26 @@ pub const Fiber = extern struct {
         frame: u32,
         /// Beginning of next args
         stackstart: u32,
+
+        fn reserve(self: *Stack, rt: *janet.Runtime, unused: usize) Allocator.Error!void {
+            const needed = try x.array_list.add_or_oom(self.data.len, unused);
+            if (needed <= self.data.capacity) return;
+
+            const capacity_next = x.array_list.grow_capacity(Value, needed);
+            const capacity_prev = self.data.capacity;
+            const memory = try janet.gc.realloc(
+                rt.gpa,
+                @ptrCast(self.data.ptr),
+                capacity_next * @sizeOf(Value),
+            );
+            self.data.ptr = @ptrCast(memory.ptr);
+            self.data.capacity = @intCast(capacity_next);
+            rt.c.gc_next_collection += (self.data.capacity - capacity_prev) * @sizeOf(Value);
+        }
+
+        pub fn push(self: *Stack, rt: *janet.Runtime, v: Value) Allocator.Error!void {
+            try self.reserve(rt, 1);
+            self.data.append(v);
+        }
     };
 };

@@ -131,8 +131,43 @@ test "Thin reserves exact capacity and preserves items" {
 
 pub fn Fat(comptime T: type) type {
     return extern struct {
+        const Self = @This();
+
         ptr: [*]T,
         len: u32,
         capacity: u32,
+
+        pub const empty: Self = .{ .ptr = &.{}, .len = 0, .capacity = 0 };
+
+        pub fn deinit(self: *Self, gpa: Allocator) void {
+            gpa.free(self.ptr[0..self.capacity]);
+            self.* = undefined;
+        }
+
+        pub fn slice(self: *Self) []const T {
+            return self.ptr[0..self.len];
+        }
+
+        pub fn append(self: *Self, item: T) void {
+            assert(self.len < self.capacity);
+            self.ptr[self.len] = item;
+            self.len += 1;
+        }
     };
+}
+
+/// Returns a capacity larger than minimum that grows super-linearly.
+pub fn grow_capacity(comptime T: type, minimum: u32) u32 {
+    if (@sizeOf(T) == 0) return std.math.maxInt(u32);
+    const init_capacity: comptime_int = @max(1, std.atomic.cache_line / @sizeOf(T));
+    return minimum +| (minimum / 2 + init_capacity);
+}
+
+pub fn add_or_oom(num: u32, increment: usize) Allocator.Error!u32 {
+    const result, const overflow = @addWithOverflow(num, increment);
+    if (overflow != 0 or result > std.math.maxInt(u32)) {
+        @branchHint(.unlikely);
+        return error.OutOfMemory;
+    }
+    return @intCast(result);
 }
