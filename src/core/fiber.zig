@@ -10,6 +10,7 @@ comptime {
     @export(&push2, .{ .name = "janet_fiber_push2" });
     @export(&push3, .{ .name = "janet_fiber_push3" });
     @export(&pushn, .{ .name = "janet_fiber_pushn" });
+    @export(&funcframe, .{ .name = "janet_fiber_funcframe" });
 }
 
 fn status(fiber: *janet.value.Fiber) callconv(.c) c_uint {
@@ -42,4 +43,12 @@ fn push3(fiber: *janet.value.Fiber, x1: janet.Value, x2: janet.Value, x3: janet.
 
 fn pushn(fiber: *janet.value.Fiber, values: ?[*]const janet.Value, count: i32) callconv(.c) void {
     fiber.stack.pushn(janet.Runtime.default(), x.c_slice(values, count)) catch janet.oom();
+}
+
+fn funcframe(fiber: *janet.value.Fiber, func: *janet.value.Function) callconv(.c) c_int {
+    _ = fiber.stack.push_funcframe(janet.Runtime.default(), func) catch |err| switch (err) {
+        error.ArityMismatch => return 1,
+        error.OutOfMemory => janet.oom(),
+    };
+    return 0;
 }

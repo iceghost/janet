@@ -130,68 +130,6 @@ static Janet make_struct_n(const Janet *args, int32_t n) {
     return janet_wrap_struct(janet_struct_end(st));
 }
 
-/* Push a stack frame to a fiber */
-int janet_fiber_funcframe(JanetFiber *fiber, JanetFunction *func) {
-    JanetStackFrame *newframe;
-
-    int32_t i;
-    int32_t oldtop = fiber->stacktop;
-    int32_t oldframe = fiber->frame;
-    int32_t nextframe = fiber->stackstart;
-    int32_t nextstacktop = nextframe + func->def->slotcount + JANET_FRAME_SIZE;
-    int32_t next_arity = fiber->stacktop - fiber->stackstart;
-
-    /* Check strict arity before messing with state */
-    if (next_arity < func->def->min_arity) return 1;
-    if (next_arity > func->def->max_arity) return 1;
-
-    if (fiber->capacity < nextstacktop) {
-        janet_fiber_setcapacity(fiber, 2 * nextstacktop);
-#ifdef JANET_DEBUG
-    } else {
-        janet_fiber_refresh_memory(fiber);
-#endif
-    }
-
-    /* Nil unset stack arguments (Needed for gc correctness) */
-    for (i = fiber->stacktop; i < nextstacktop; ++i) {
-        fiber->data[i] = janet_wrap_nil();
-    }
-
-    /* Set up the next frame */
-    fiber->frame = nextframe;
-    fiber->stacktop = fiber->stackstart = nextstacktop;
-    newframe = janet_fiber_frame(fiber);
-    newframe->prevframe = oldframe;
-    newframe->pc = func->def->bytecode;
-    newframe->func = func;
-    newframe->env = NULL;
-    newframe->flags = 0;
-
-    /* Check varargs */
-    if (func->def->flags & JANET_FUNCDEF_FLAG_VARARG) {
-        int32_t tuplehead = fiber->frame + func->def->arity;
-        janet_assert(tuplehead > 0, "fiber stack overflow");
-        int st = func->def->flags & JANET_FUNCDEF_FLAG_STRUCTARG;
-        if (tuplehead >= oldtop) {
-            fiber->data[tuplehead] = st
-                                     ? make_struct_n(NULL, 0)
-                                     : janet_wrap_tuple(janet_tuple_n(NULL, 0));
-        } else {
-            fiber->data[tuplehead] = st
-                                     ? make_struct_n(
-                                         fiber->data + tuplehead,
-                                         oldtop - tuplehead)
-                                     : janet_wrap_tuple(janet_tuple_n(
-                                             fiber->data + tuplehead,
-                                             oldtop - tuplehead));
-        }
-    }
-
-    /* Good return */
-    return 0;
-}
-
 /* If a frame has a closure environment, detach it from
  * the stack and have it keep its own values */
 static void janet_env_detach(JanetFuncEnv *env) {

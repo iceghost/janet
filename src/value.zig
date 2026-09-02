@@ -199,6 +199,10 @@ pub const Box = extern struct {
         return .{ .repr = .box_any(.tuple, Tuple.Extern.Pointer.wrap(t).ptr) };
     }
 
+    pub fn @"struct"(s: *Struct) Box {
+        return .{ .repr = .box_any(.@"struct", Struct.Extern.Pointer.wrap(s).ptr) };
+    }
+
     pub fn table(t: *Table) Box {
         return .{ .repr = .box_any(.table, t) };
     }
@@ -730,6 +734,15 @@ pub const Struct = extern struct {
             self.hash +%= 2654435761 *% proto.hash;
         }
         return self;
+    }
+
+    pub fn from_slice(rt: *janet.Runtime, values: []const Value) Allocator.Error!*Struct {
+        const result = try begin(rt, @intCast(@divExact(values.len, 2)));
+        var i: usize = 0;
+        while (i < values.len) : (i += 2) {
+            result.put(values[i], values[i + 1], true);
+        }
+        return result.end(rt);
     }
 
     pub fn get_shallow(self: *Struct, key: Value) ?Value {
@@ -1360,9 +1373,9 @@ pub const FunctionDefinition = extern struct {
 
     flags: Flags,
     /// The amount of stack space required for the function.
-    slotcount: i32,
+    slotcount: u32,
     /// Does not include varargs.
-    arity: i32,
+    arity: u32,
     /// Includes varargs.
     min_arity: i32,
     /// Includes varargs.
@@ -1384,8 +1397,8 @@ pub const FunctionDefinition = extern struct {
         has_defs: bool,
         has_envs: bool,
         has_sourcemap: bool,
-        has_closure_bitset: bool,
         structarg: bool,
+        has_closure_bitset: bool,
         named_args: bool,
         unused: u5 = 0,
     };
@@ -1497,10 +1510,13 @@ pub const Fiber = extern struct {
         stackstart: u32,
 
         fn reserve(self: *Stack, rt: *janet.Runtime, unused: usize) Allocator.Error!void {
-            const needed = try x.array_list.add_or_oom(self.data.len, unused);
-            if (needed <= self.data.capacity) return;
+            const total_needed = try x.array_list.add_or_oom(self.data.len, unused);
+            return self.reserve_total(rt, total_needed);
+        }
 
-            const capacity_next = x.array_list.grow_capacity(Value, needed);
+        fn reserve_total(self: *Stack, rt: *janet.Runtime, total: u32) Allocator.Error!void {
+            if (total <= self.data.capacity) return;
+            const capacity_next = x.array_list.grow_capacity(Value, total);
             return self.reserve_total_precise(rt, capacity_next);
         }
 
@@ -1543,6 +1559,66 @@ pub const Fiber = extern struct {
             self.data.len = end;
         }
 
+        pub fn push_funcframe(self: *Stack, rt: *janet.Runtime, func: *Function) error{ ArityMismatch, OutOfMemory }!View {
+            const def = func.def;
+            const old_top = self.data.len;
+            const next_frame_begin = self.stackstart;
+            const arity: i64 = old_top - next_frame_begin;
+
+            if (arity < def.min_arity or arity > def.max_arity) return error.ArityMismatch;
+
+            const next_stack_top = next_frame_begin + def.slotcount + frame_size;
+            try self.reserve_total(rt, next_stack_top);
+
+            const varargs: ?Value = if (def.flags.vararg) varargs: {
+                const tuple_begin = next_frame_begin + def.arity;
+                const values = if (tuple_begin < old_top)
+                    self.data.ptr[tuple_begin..old_top]
+                else
+                    &.{};
+
+                if (def.flags.structarg) {
+                    // Janet will trim structargs to even len, silently dropping the last value.
+                    // It will be reported as a compiler lint.
+                    const count_even = values.len - values.len % 2;
+                    break :varargs .@"struct"(try Struct.from_slice(rt, values[0..count_even]));
+                } else {
+                    break :varargs .tuple(try Tuple.from_slice(rt, values));
+                }
+            } else null;
+
+            if (old_top < next_stack_top) {
+                @memset(self.data.ptr[old_top..next_stack_top], .nil);
+            }
+
+            const view: View = .{
+                .frame_begin = next_frame_begin,
+                .frame_end = next_stack_top,
+            };
+            view.frame(self.data.ptr[0..next_stack_top]).* = .{
+                .func = func,
+                .pc = def.bytecode,
+                .env = null,
+                .prev = self.frame,
+                .flags = .{
+                    .tailcall = false,
+                    .entrance = false,
+                    .hasenv = false,
+                },
+            };
+
+            if (varargs) |value| {
+                const tuple_begin = next_frame_begin + def.arity;
+                @memset(self.data.ptr[tuple_begin..next_stack_top], .nil);
+                self.data.ptr[tuple_begin] = value;
+            }
+
+            self.frame = next_frame_begin;
+            self.stackstart = next_stack_top;
+            self.data.len = next_stack_top;
+            return view;
+        }
+
         pub const Frame = extern struct {
             func: ?*Function,
             pc: ?[*]janet.bytecode.Quadruple,
@@ -1557,6 +1633,30 @@ pub const Fiber = extern struct {
                 // used by marshalling
                 hasenv: bool,
             };
+        };
+
+        pub const frame_size: u32 = 4;
+
+        pub const View = struct {
+            frame_begin: u32,
+            frame_end: u32,
+
+            pub fn frame(self: View, slots: []Value) *Frame {
+                return @ptrCast(@alignCast(slots[self.frame_begin - frame_size .. self.frame_begin].ptr));
+            }
+
+            pub fn args_and_locals(self: View, slots: []Value) []Value {
+                return slots[self.frame_begin .. self.frame_end - frame_size];
+            }
+
+            pub fn prev(self: View, slots: []Value) ?View {
+                const f = self.frame(slots);
+                if (f.prev == 0) return null;
+                return .{
+                    .frame_begin = f.prev,
+                    .frame_end = self.frame_begin,
+                };
+            }
         };
     };
 };
