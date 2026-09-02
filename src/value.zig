@@ -1501,20 +1501,46 @@ pub const Fiber = extern struct {
             if (needed <= self.data.capacity) return;
 
             const capacity_next = x.array_list.grow_capacity(Value, needed);
+            return self.reserve_total_precise(rt, capacity_next);
+        }
+
+        pub fn reserve_total_precise(self: *Stack, rt: *janet.Runtime, total: u32) Allocator.Error!void {
             const capacity_prev = self.data.capacity;
             const memory = try janet.gc.realloc(
                 rt.gpa,
                 @ptrCast(self.data.ptr),
-                capacity_next * @sizeOf(Value),
+                total * @sizeOf(Value),
             );
             self.data.ptr = @ptrCast(memory.ptr);
-            self.data.capacity = @intCast(capacity_next);
-            rt.c.gc_next_collection += (self.data.capacity - capacity_prev) * @sizeOf(Value);
+            self.data.capacity = total;
+            if (total >= capacity_prev) {
+                rt.c.gc_next_collection += (total - capacity_prev) * @sizeOf(Value);
+            } else {
+                rt.c.gc_next_collection -%= (capacity_prev - total) * @sizeOf(Value);
+            }
         }
 
         pub fn push(self: *Stack, rt: *janet.Runtime, v: Value) Allocator.Error!void {
             try self.reserve(rt, 1);
             self.data.append(v);
+        }
+
+        pub fn push2(self: *Stack, rt: *janet.Runtime, x1: Value, x2: Value) Allocator.Error!void {
+            try self.reserve(rt, 2);
+            self.data.add_many_as_array(2).* = .{ x1, x2 };
+        }
+
+        pub fn push3(self: *Stack, rt: *janet.Runtime, x1: Value, x2: Value, x3: Value) Allocator.Error!void {
+            try self.reserve(rt, 3);
+            self.data.add_many_as_array(3).* = .{ x1, x2, x3 };
+        }
+
+        pub fn pushn(self: *Stack, rt: *janet.Runtime, values: []const Value) Allocator.Error!void {
+            try self.reserve(rt, values.len);
+            const start = self.data.len;
+            const end = start + @as(u32, @intCast(values.len));
+            @memcpy(self.data.ptr[start..end], values);
+            self.data.len = end;
         }
 
         pub const Frame = extern struct {

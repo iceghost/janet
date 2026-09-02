@@ -153,7 +153,23 @@ pub fn Fat(comptime T: type) type {
             self.ptr[self.len] = item;
             self.len += 1;
         }
+
+        pub fn add_many_as_array(self: *Self, comptime n: usize) *[n]T {
+            assert(n <= self.capacity - self.len);
+            const start = self.len;
+            self.len += n;
+            return self.ptr[start..][0..n];
+        }
     };
+}
+
+test "Fat adds many as array" {
+    var storage: [3]u32 = undefined;
+    var list: Fat(u32) = .{ .ptr = &storage, .len = 0, .capacity = storage.len };
+
+    list.add_many_as_array(3).* = .{ 10, 20, 30 };
+
+    try std.testing.expectEqualSlices(u32, &.{ 10, 20, 30 }, list.slice());
 }
 
 /// Returns a capacity larger than minimum that grows super-linearly.

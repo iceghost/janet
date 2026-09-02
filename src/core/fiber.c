@@ -113,59 +113,10 @@ static void janet_fiber_refresh_memory(JanetFiber *fiber) {
 }
 #endif
 
-/* Ensure that the fiber has enough extra capacity */
-void janet_fiber_setcapacity(JanetFiber *fiber, int32_t n) {
-    int32_t old_size = fiber->capacity;
-    int32_t diff = n - old_size;
-    Janet *newData = janet_realloc(fiber->data, sizeof(Janet) * n);
-    if (NULL == newData) {
-        JANET_OUT_OF_MEMORY;
-    }
-    fiber->data = newData;
-    fiber->capacity = n;
-    janet_vm.next_collection += sizeof(Janet) * diff;
-}
-
 /* Grow fiber if needed */
 static void janet_fiber_grow(JanetFiber *fiber, int32_t needed) {
     int32_t cap = needed > (INT32_MAX / 2) ? INT32_MAX : 2 * needed;
     janet_fiber_setcapacity(fiber, cap);
-}
-
-/* Push 2 values on the next stack frame */
-void janet_fiber_push2(JanetFiber *fiber, Janet x, Janet y) {
-    if (fiber->stacktop >= INT32_MAX - 1) janet_panic("stack overflow");
-    int32_t newtop = fiber->stacktop + 2;
-    if (newtop > fiber->capacity) {
-        janet_fiber_grow(fiber, newtop);
-    }
-    fiber->data[fiber->stacktop] = x;
-    fiber->data[fiber->stacktop + 1] = y;
-    fiber->stacktop = newtop;
-}
-
-/* Push 3 values on the next stack frame */
-void janet_fiber_push3(JanetFiber *fiber, Janet x, Janet y, Janet z) {
-    if (fiber->stacktop >= INT32_MAX - 2) janet_panic("stack overflow");
-    int32_t newtop = fiber->stacktop + 3;
-    if (newtop > fiber->capacity) {
-        janet_fiber_grow(fiber, newtop);
-    }
-    fiber->data[fiber->stacktop] = x;
-    fiber->data[fiber->stacktop + 1] = y;
-    fiber->data[fiber->stacktop + 2] = z;
-    fiber->stacktop = newtop;
-}
-
-/* Push an array on the next stack frame */
-void janet_fiber_pushn(JanetFiber *fiber, const Janet *arr, int32_t n) {
-    if (fiber->stacktop > INT32_MAX - n) janet_panic("stack overflow");
-    int32_t newtop = fiber->stacktop + n;
-    if (newtop > fiber->capacity) {
-        janet_fiber_grow(fiber, newtop);
-    }
-    safe_memcpy(fiber->data + fiber->stacktop, arr, n * sizeof(Janet));
-    fiber->stacktop = newtop;
 }
 
 /* Create a struct with n values. If n is odd, the last value is ignored. */
