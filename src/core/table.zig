@@ -128,10 +128,10 @@ fn to_struct(table: *Table.Extern) callconv(.c) Struct.Extern.Pointer {
 fn create_typed(requested_capacity: i32, object_type: janet.gc.ObjectType) std.mem.Allocator.Error!*Table.Extern {
     const rt = janet.Runtime.default();
     const handle, const table = try Table.create_deferred(rt);
-    errdefer janet.gc.free(rt.gpa, @ptrCast(table));
+    errdefer handle.destroy();
 
     try table.reserve_total(rt, @intCast(requested_capacity));
-    rt.c.gc_next_collection += @as(usize, table.capacity) * @sizeOf([2]janet.Value);
+    janet.gc.pressure(rt, [2]janet.Value, 0, table.capacity);
 
     handle.finish(object_type);
 

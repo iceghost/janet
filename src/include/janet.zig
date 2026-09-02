@@ -25,13 +25,13 @@ fn allocator() std.mem.Allocator {
 }
 
 fn malloc(size: usize) callconv(.c) ?[*]align(alignment_size) u8 {
-    const memory = janet.gc.alloc(allocator(), size) catch return null;
+    const memory = janet.gc.alloc_untracked(allocator(), size) catch return null;
     return memory.ptr;
 }
 
 fn calloc(count: usize, element_size: usize) callconv(.c) ?[*]align(alignment_size) u8 {
     const size = std.math.mul(usize, count, element_size) catch return null;
-    const memory = janet.gc.alloc(allocator(), size) catch return null;
+    const memory = janet.gc.alloc_untracked(allocator(), size) catch return null;
     @memset(memory, 0);
     return memory.ptr;
 }
@@ -43,12 +43,12 @@ fn realloc(pointer: ?[*]align(alignment_size) u8, new_size: usize) callconv(.c) 
         return null;
     }
 
-    const memory = janet.gc.realloc(allocator(), pointer.?, new_size) catch return null;
+    const memory = janet.gc.realloc_raw(allocator(), pointer.?, new_size) catch return null;
     return memory.ptr;
 }
 
 fn free(pointer: ?[*]align(alignment_size) u8) callconv(.c) void {
-    janet.gc.free(allocator(), pointer orelse return);
+    janet.gc.free_untracked(allocator(), pointer orelse return);
 }
 
 fn smalloc(size: usize) callconv(.c) [*]align(alignment_size) u8 {
@@ -60,7 +60,7 @@ fn smalloc_error(size: usize) std.mem.Allocator.Error![*]align(alignment_size) u
     var arena = rt.arena_per_gc.promote(rt.gpa);
     defer rt.arena_per_gc = arena.state;
 
-    const memory = try janet.gc.alloc(arena.allocator(), size);
+    const memory = try janet.gc.alloc_untracked(arena.allocator(), size);
     return memory.ptr;
 }
 
@@ -77,7 +77,7 @@ fn srealloc(pointer: ?[*]align(alignment_size) u8, new_size: usize) callconv(.c)
     var arena = rt.arena_per_gc.promote(rt.gpa);
     defer rt.arena_per_gc = arena.state;
 
-    const memory = janet.gc.realloc(arena.allocator(), p, new_size) catch janet.oom();
+    const memory = janet.gc.realloc_raw(arena.allocator(), p, new_size) catch janet.oom();
     return memory.ptr;
 }
 
@@ -87,7 +87,7 @@ fn sfree(pointer: ?[*]align(alignment_size) u8) callconv(.c) void {
     var arena = rt.arena_per_gc.promote(rt.gpa);
     defer rt.arena_per_gc = arena.state;
 
-    janet.gc.free(arena.allocator(), memory);
+    janet.gc.free_untracked(arena.allocator(), memory);
 }
 
 fn sfreeall() callconv(.c) void {

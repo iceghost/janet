@@ -28,7 +28,8 @@ pub fn mem_chop_head(m: anytype, comptime Head: type) struct {
     return .{ head, tail_pointer[0 .. m.len - head_size] };
 }
 
-pub fn mem_recover_head(comptime Head: type, m: [*]align(@alignOf(Head)) u8) *Head {
+pub fn mem_recover_head(comptime Head: type, m_ptr: *align(@alignOf(Head)) anyopaque) *Head {
+    const m: [*]align(@alignOf(Head)) u8 = @ptrCast(m_ptr);
     const head_pointer = m - @sizeOf(Head);
     return @ptrCast(head_pointer);
 }

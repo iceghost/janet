@@ -35,7 +35,7 @@ pub fn Thin(comptime T: type) type {
         }
 
         fn head(self: Self) *Head {
-            return x.mem_recover_head(Head, @ptrCast(self.base.?));
+            return x.mem_recover_head(Head, self.base.?);
         }
 
         pub fn items(self: *Self) []align(alignment_size) T {

@@ -95,7 +95,7 @@ pub const Array = extern struct {
 
         self.data = allocation.ptr;
         self.capacity = @intCast(capacity);
-        rt.c.gc_next_collection += (capacity - old_capacity) * @sizeOf(janet.Value);
+        janet.gc.pressure(rt, janet.Value, old_capacity, @intCast(capacity));
     }
 
     pub fn set_count(self: *Array, rt: *janet.Runtime, count: u32) Allocator.Error!void {
@@ -783,7 +783,7 @@ pub const Struct = extern struct {
         errdefer table.clear_and_free(rt);
 
         try table.merge(rt, .from_struct(self));
-        rt.c.gc_next_collection += @as(usize, table.capacity) * @sizeOf(Pair);
+        janet.gc.pressure(rt, Pair, 0, table.capacity);
         handle.finish(.table);
         return table;
     }
@@ -1077,7 +1077,7 @@ pub const Table = extern struct {
             }
         }
 
-        rt.c.gc_next_collection += @as(usize, flattened.capacity) * @sizeOf(Pair);
+        janet.gc.pressure(rt, Pair, 0, flattened.capacity);
         handle.finish(.table);
         return flattened;
     }
@@ -1477,10 +1477,7 @@ pub const FunctionEnvironment = extern struct {
         }
 
         const len = self.length; // Maximum is 256.
-        const size = @as(usize, len) * @sizeOf(Value);
-        const memory = try janet.gc.alloc(rt.gpa, size);
-        rt.c.gc_next_collection += size;
-        const values = x.bytes_as_slice(Value, memory);
+        const values = try janet.gc.alloc(rt, Value, len);
 
         const fiber = self.as.fiber.?;
         const offset: u32 = @intCast(self.offset);
@@ -1601,19 +1598,9 @@ pub const Fiber = extern struct {
         }
 
         pub fn reserve_total_precise(self: *Stack, rt: *janet.Runtime, total: u32) Allocator.Error!void {
-            const capacity_prev = self.data.capacity;
-            const memory = try janet.gc.realloc(
-                rt.gpa,
-                @ptrCast(self.data.ptr),
-                total * @sizeOf(Value),
-            );
+            const memory = try janet.gc.realloc(rt, Value, self.data.ptr[0..self.data.capacity], total);
             self.data.ptr = @ptrCast(memory.ptr);
             self.data.capacity = total;
-            if (total >= capacity_prev) {
-                rt.c.gc_next_collection += (total - capacity_prev) * @sizeOf(Value);
-            } else {
-                rt.c.gc_next_collection -%= (capacity_prev - total) * @sizeOf(Value);
-            }
         }
 
         pub fn push(self: *Stack, rt: *janet.Runtime, v: Value) Allocator.Error!void {
