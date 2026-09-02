@@ -59,11 +59,16 @@ test "all janet test suites" {
             );
             defer std.testing.allocator.free(suite_path);
 
-            var child = try std.process.spawn(std.testing.io, .{
+            const result = try std.process.run(std.testing.allocator, std.testing.io, .{
                 .argv = &.{ x.testing.exe_path, suite_path },
             });
-            defer child.kill(std.testing.io);
-            try std.testing.expectEqual(std.process.Child.Term{ .exited = 0 }, try child.wait(std.testing.io));
+            defer std.testing.allocator.free(result.stdout);
+            defer std.testing.allocator.free(result.stderr);
+
+            if (!std.meta.eql(result.term, std.process.Child.Term{ .exited = 0 })) {
+                std.debug.print("{s}{s}", .{ result.stdout, result.stderr });
+            }
+            try std.testing.expectEqual(std.process.Child.Term{ .exited = 0 }, result.term);
         }
     }
 }
