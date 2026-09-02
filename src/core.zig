@@ -2,7 +2,9 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 
+const generated = @import("generated");
 const janet = @import("janet");
+const x = @import("x");
 
 const Error = Allocator.Error || error{
     JanetPanic,
@@ -24,4 +26,13 @@ pub fn @"array/new"(rt: *janet.Runtime, values: []const janet.Value) Error!janet
     const arr: *janet.Array = try .create(rt);
     try arr.ensure(rt, @intCast(values.len), 1);
     return .array(arr);
+}
+
+test "[codegen] corelib" {
+    if (comptime !janet.options.is_codegen) {
+        try std.testing.expectEqual(0xDEADBEEF, generated.magic);
+        return;
+    }
+
+    try x.testing.codegen_writer.print("pub const magic = 0x{x};", .{0xDEADBEEF});
 }

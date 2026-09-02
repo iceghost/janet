@@ -9,6 +9,7 @@ const Value = janet.Value;
 
 pub const janet_options = .{
     .bootstrap = false,
+    .is_codegen = false,
     .nanbox = true,
 };
 

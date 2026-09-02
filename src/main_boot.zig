@@ -4,6 +4,7 @@ const c = janet.c;
 
 pub const janet_options = .{
     .bootstrap = true,
+    .is_codegen = false,
     .nanbox = true,
 };
 

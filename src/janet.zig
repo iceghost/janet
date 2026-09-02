@@ -22,6 +22,7 @@ pub const c = @cImport({
 });
 
 comptime {
+    _ = core;
     _ = @import("include/janet.zig");
     _ = @import("core/array.zig");
     _ = @import("core/fiber.zig");

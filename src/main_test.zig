@@ -8,6 +8,7 @@ const x = @import("x");
 
 pub const janet_options = .{
     .bootstrap = false,
+    .is_codegen = false,
     .nanbox = true,
 };
 
