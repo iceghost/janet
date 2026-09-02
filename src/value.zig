@@ -1351,7 +1351,6 @@ pub const Tuple = extern struct {
 extern fn janet_hash(v: Value) callconv(.c) i32;
 extern fn janet_equals(lhs: Value, rhs: Value) callconv(.c) c_int;
 extern fn janet_compare(lhs: Value, rhs: Value) callconv(.c) c_int;
-extern fn janet_env_detach(env: ?*FunctionEnvironment) callconv(.c) void;
 
 pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));
@@ -1432,10 +1431,88 @@ pub const FunctionEnvironment = extern struct {
         values: ?[*]Value,
     },
     /// Size of the environment.
-    length: i32,
+    length: u32,
     /// Stack offset while values are on the stack. If this is zero or negative,
     /// the environment is no longer on the stack.
     offset: i32,
+
+    /// Validate potentially untrusted func env (unmarshalled envs are difficult to verify).
+    pub fn valid(self: *FunctionEnvironment) bool {
+        if (self.offset >= 0) return true;
+
+        const real_offset: u32 = @intCast(-@as(i64, self.offset));
+        const fiber = self.as.fiber orelse return false;
+        const slots = fiber.stack.data.ptr[0..fiber.stack.data.len];
+        var view: ?Fiber.Stack.View = if (fiber.stack.frame == 0) null else .{
+            .frame_begin = fiber.stack.frame,
+            .frame_end = fiber.stack.stackstart,
+        };
+        while (view) |current| : (view = current.prev(slots)) {
+            const frame = current.frame(slots);
+            if (real_offset == current.frame_begin and
+                frame.env == self and
+                frame.func != null and
+                frame.func.?.def.slotcount == self.length)
+            {
+                self.offset = @intCast(real_offset);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    pub fn invalidate(self: *FunctionEnvironment) void {
+        // Invalid, set to empty off-stack variant.
+        self.offset = 0;
+        self.length = 0;
+        self.as.values = null;
+    }
+
+    /// If a frame has a closure environment, detach it from the stack and have it keep its own values.
+    pub fn detach(self: *FunctionEnvironment, rt: *janet.Runtime) Allocator.Error!void {
+        if (!self.valid()) {
+            self.invalidate();
+            return;
+        }
+
+        const len = self.length; // Maximum is 256.
+        const size = @as(usize, len) * @sizeOf(Value);
+        const memory = try janet.gc.alloc(rt.gpa, size);
+        rt.c.gc_next_collection += size;
+        const values = x.bytes_as_slice(Value, memory);
+
+        const fiber = self.as.fiber.?;
+        const offset: u32 = @intCast(self.offset);
+        @memcpy(values, fiber.stack.data.ptr[offset..][0..len]);
+
+        const view: Fiber.Stack.View = .{
+            .frame_begin = offset,
+            .frame_end = undefined,
+        };
+        const frame = view.frame(fiber.stack.data.ptr[0..fiber.stack.data.len]);
+        if (frame.func.?.def.closure_bitset) |bitset| {
+            // Clear unneeded references in closure environment.
+            for (values, 0..) |*value, i| {
+                if (bitset[i / 32] & (@as(u32, 1) << @intCast(i % 32)) == 0) value.* = .nil;
+            }
+        }
+
+        self.offset = 0;
+        self.as.values = values.ptr;
+    }
+
+    /// Detach a fiber from the env if the target fiber has stopped mutating.
+    pub fn detach_maybe(self: *FunctionEnvironment, rt: *janet.Runtime) Allocator.Error!void {
+        // Check for detachable closure envs.
+        if (!self.valid()) self.invalidate();
+        if (self.offset <= 0) return;
+
+        switch (self.as.fiber.?.flags.status) {
+            .dead, .@"error", .user0, .user1, .user2, .user3, .user4 => try self.detach(rt),
+            else => {},
+        }
+    }
 };
 
 pub const Fiber = extern struct {
@@ -1650,7 +1727,9 @@ pub const Fiber = extern struct {
             };
             const frame = view.frame(self.data.ptr[0..self.data.capacity]);
             const frame_prev = frame.*;
-            if (frame_prev.func != null) janet_env_detach(frame_prev.env);
+            if (frame_prev.func != null) {
+                if (frame_prev.env) |env| try env.detach(rt);
+            }
 
             if (def.flags.vararg) try self.pack_varargs(rt, def);
 
@@ -1711,7 +1790,7 @@ pub const Fiber = extern struct {
             return view;
         }
 
-        pub fn pop_frame(self: *Stack) void {
+        pub fn pop_frame(self: *Stack, rt: *janet.Runtime) Allocator.Error!void {
             if (self.frame == 0) return;
 
             const view: View = .{
@@ -1720,7 +1799,9 @@ pub const Fiber = extern struct {
             };
             const frame = view.frame(self.data.ptr[0..self.data.len]);
             const prev = frame.prev;
-            if (frame.func != null) janet_env_detach(frame.env);
+            if (frame.func != null) {
+                if (frame.env) |env| try env.detach(rt);
+            }
 
             self.data.len = self.frame;
             self.stackstart = self.frame;

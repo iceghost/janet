@@ -14,6 +14,9 @@ comptime {
     @export(&funcframe_tail, .{ .name = "janet_fiber_funcframe_tail" });
     @export(&cframe, .{ .name = "janet_fiber_cframe" });
     @export(&popframe, .{ .name = "janet_fiber_popframe" });
+    @export(&env_detach, .{ .name = "janet_env_detach" });
+    @export(&env_valid, .{ .name = "janet_env_valid" });
+    @export(&env_maybe_detach, .{ .name = "janet_env_maybe_detach" });
 }
 
 fn status(fiber: *janet.value.Fiber) callconv(.c) c_uint {
@@ -69,5 +72,20 @@ fn cframe(fiber: *janet.value.Fiber, cfunc: janet.value.CFunction) callconv(.c) 
 }
 
 fn popframe(fiber: *janet.value.Fiber) callconv(.c) void {
-    fiber.stack.pop_frame();
+    fiber.stack.pop_frame(janet.Runtime.default()) catch janet.oom();
+}
+
+fn env_detach(env: ?*janet.value.FunctionEnvironment) callconv(.c) void {
+    const e = env orelse return;
+    e.detach(janet.Runtime.default()) catch janet.oom();
+}
+
+fn env_valid(env: *janet.value.FunctionEnvironment) callconv(.c) c_int {
+    if (env.valid()) return 1;
+    env.invalidate();
+    return 0;
+}
+
+fn env_maybe_detach(env: *janet.value.FunctionEnvironment) callconv(.c) void {
+    env.detach_maybe(janet.Runtime.default()) catch janet.oom();
 }
