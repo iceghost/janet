@@ -6,6 +6,7 @@ const x = @import("x");
 
 pub const bytecode = @import("bytecode.zig");
 pub const compile = @import("compile.zig");
+pub const core = @import("core.zig");
 pub const gc = @import("gc.zig");
 pub const Runtime = @import("runtime.zig");
 pub const value = @import("value.zig");

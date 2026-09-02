@@ -63,3 +63,38 @@ pub fn default() *Runtime {
 
 /// Initialized in `main`
 pub var state_shared: Runtime.Shared = undefined;
+
+pub const Signal = enum(c_int) {
+    ok,
+    @"error",
+    debug,
+    yield,
+    user0,
+    user1,
+    user2,
+    user3,
+    user4,
+    user5,
+    user6,
+    user7,
+    interrupt,
+    event,
+};
+
+extern fn janet_signal(sig: Signal, v: janet.Value) callconv(.c) noreturn;
+pub fn signal(rt: *Runtime, sig: Signal, v: janet.Value) noreturn {
+    _ = rt;
+    janet_signal(sig, v);
+}
+
+pub fn oom(rt: *Runtime) noreturn {
+    _ = rt; // autofix
+    @panic("out of memory");
+}
+
+pub fn panic(rt: *Runtime, fmt: []const u8, args: anytype) error{JanetPanic} {
+    _ = rt; // autofix
+    _ = fmt; // autofix
+    _ = args; // autofix
+    return error.JanetPanic;
+}
