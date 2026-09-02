@@ -97,42 +97,9 @@ JanetFiber *janet_fiber(JanetFunction *callee, int32_t capacity, int32_t argc, c
     return janet_fiber_reset(fiber_alloc(capacity), callee, argc, argv);
 }
 
-#ifdef JANET_DEBUG
-/* Test for memory issues by reallocating fiber every time we push a stack frame */
-static void janet_fiber_refresh_memory(JanetFiber *fiber) {
-    int32_t n = fiber->capacity;
-    if (n) {
-        Janet *newData = array_allocate(sizeof(Janet), n);
-        if (NULL == newData) {
-            JANET_OUT_OF_MEMORY;
-        }
-        memcpy(newData, fiber->data, n * sizeof(Janet));
-        janet_free(fiber->data);
-        fiber->data = newData;
-    }
-}
-#endif
-
-/* Grow fiber if needed */
-static void janet_fiber_grow(JanetFiber *fiber, int32_t needed) {
-    int32_t cap = needed > (INT32_MAX / 2) ? INT32_MAX : 2 * needed;
-    janet_fiber_setcapacity(fiber, cap);
-}
-
-/* Create a struct with n values. If n is odd, the last value is ignored. */
-static Janet make_struct_n(const Janet *args, int32_t n) {
-    int32_t i = 0;
-    if (n & 1) n--;
-    JanetKV *st = janet_struct_begin(n);
-    for (; i < n; i += 2) {
-        janet_struct_put(st, args[i], args[i + 1]);
-    }
-    return janet_wrap_struct(janet_struct_end(st));
-}
-
 /* If a frame has a closure environment, detach it from
  * the stack and have it keep its own values */
-static void janet_env_detach(JanetFuncEnv *env) {
+void janet_env_detach(JanetFuncEnv *env) {
     /* Check for closure environment */
     if (env) {
         janet_env_valid(env);
@@ -206,116 +173,6 @@ void janet_env_maybe_detach(JanetFuncEnv *env) {
             janet_env_detach(env);
         }
     }
-}
-
-/* Create a tail frame for a function */
-int janet_fiber_funcframe_tail(JanetFiber *fiber, JanetFunction *func) {
-    int32_t i;
-    int32_t nextframetop = fiber->frame + func->def->slotcount;
-    int32_t nextstacktop = nextframetop + JANET_FRAME_SIZE;
-    int32_t next_arity = fiber->stacktop - fiber->stackstart;
-    int32_t stacksize;
-
-    /* Check strict arity before messing with state */
-    if (next_arity < func->def->min_arity) return 1;
-    if (next_arity > func->def->max_arity) return 1;
-
-    if (fiber->capacity < nextstacktop) {
-        janet_fiber_setcapacity(fiber, 2 * nextstacktop);
-#ifdef JANET_DEBUG
-    } else {
-        janet_fiber_refresh_memory(fiber);
-#endif
-    }
-
-    /* Detach old function */
-    if (NULL != janet_fiber_frame(fiber)->func)
-        janet_env_detach(janet_fiber_frame(fiber)->env);
-    janet_fiber_frame(fiber)->env = NULL;
-
-    /* Check varargs */
-    if (func->def->flags & JANET_FUNCDEF_FLAG_VARARG) {
-        int32_t tuplehead = fiber->stackstart + func->def->arity;
-        int st = func->def->flags & JANET_FUNCDEF_FLAG_STRUCTARG;
-        if (tuplehead >= fiber->stacktop) {
-            if (tuplehead >= fiber->capacity) janet_fiber_setcapacity(fiber, 2 * (tuplehead + 1));
-            for (i = fiber->stacktop; i < tuplehead; ++i) fiber->data[i] = janet_wrap_nil();
-            fiber->data[tuplehead] = st
-                                     ? make_struct_n(NULL, 0)
-                                     : janet_wrap_tuple(janet_tuple_n(NULL, 0));
-        } else {
-            fiber->data[tuplehead] = st
-                                     ? make_struct_n(
-                                         fiber->data + tuplehead,
-                                         fiber->stacktop - tuplehead)
-                                     : janet_wrap_tuple(janet_tuple_n(
-                                             fiber->data + tuplehead,
-                                             fiber->stacktop - tuplehead));
-        }
-        stacksize = tuplehead - fiber->stackstart + 1;
-    } else {
-        stacksize = fiber->stacktop - fiber->stackstart;
-    }
-
-    if (stacksize) memmove(fiber->data + fiber->frame, fiber->data + fiber->stackstart, stacksize * sizeof(Janet));
-
-    /* Nil unset locals (Needed for functional correctness) */
-    for (i = fiber->frame + stacksize; i < nextframetop; ++i)
-        fiber->data[i] = janet_wrap_nil();
-
-    /* Set stack stuff */
-    fiber->stacktop = fiber->stackstart = nextstacktop;
-
-    /* Set frame stuff */
-    janet_fiber_frame(fiber)->func = func;
-    janet_fiber_frame(fiber)->pc = func->def->bytecode;
-    janet_fiber_frame(fiber)->flags |= JANET_STACKFRAME_TAILCALL;
-
-    /* Good return */
-    return 0;
-}
-
-/* Push a stack frame to a fiber for a c function */
-void janet_fiber_cframe(JanetFiber *fiber, JanetCFunction cfun) {
-    JanetStackFrame *newframe;
-
-    int32_t oldframe = fiber->frame;
-    int32_t nextframe = fiber->stackstart;
-    int32_t nextstacktop = fiber->stacktop + JANET_FRAME_SIZE;
-
-    if (fiber->capacity < nextstacktop) {
-        janet_fiber_setcapacity(fiber, 2 * nextstacktop);
-#ifdef JANET_DEBUG
-    } else {
-        janet_fiber_refresh_memory(fiber);
-#endif
-    }
-
-    /* Set the next frame */
-    fiber->frame = nextframe;
-    fiber->stacktop = fiber->stackstart = nextstacktop;
-    newframe = janet_fiber_frame(fiber);
-
-    /* Set up the new frame */
-    newframe->prevframe = oldframe;
-    newframe->pc = (uint32_t *) cfun;
-    newframe->func = NULL;
-    newframe->env = NULL;
-    newframe->flags = 0;
-}
-
-/* Pop a stack frame from the fiber. */
-void janet_fiber_popframe(JanetFiber *fiber) {
-    JanetStackFrame *frame = janet_fiber_frame(fiber);
-    if (fiber->frame == 0) return;
-
-    /* Clean up the frame (detach environments) */
-    if (NULL != frame->func)
-        janet_env_detach(frame->env);
-
-    /* Shrink stack */
-    fiber->stacktop = fiber->stackstart = fiber->frame;
-    fiber->frame = frame->prevframe;
 }
 
 /* CFuns */

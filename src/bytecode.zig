@@ -5,7 +5,7 @@ const Allocator = mem.Allocator;
 const janet = @import("janet");
 const x = @import("x");
 
-pub const OpCode = enum {
+pub const OpCode = enum(u8) {
     noop,
     @"error",
     typecheck,
@@ -88,7 +88,7 @@ pub const OpCode = enum {
 
 pub const Quadruple = packed struct(u32) {
     op: OpCode,
-    payload: [3]u8,
+    payload: u24,
 };
 
 const Sourcemap = struct {
@@ -132,7 +132,7 @@ pub const Wip = struct {
 
         // no specialized opcode
         const cindex = self.add_constant();
-        const payload: extern struct {
+        const payload: packed struct(u24) {
             reg: u8,
             cindex: u16,
         } = .{ .reg = reg, .cindex = cindex };

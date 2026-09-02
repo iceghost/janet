@@ -11,6 +11,9 @@ comptime {
     @export(&push3, .{ .name = "janet_fiber_push3" });
     @export(&pushn, .{ .name = "janet_fiber_pushn" });
     @export(&funcframe, .{ .name = "janet_fiber_funcframe" });
+    @export(&funcframe_tail, .{ .name = "janet_fiber_funcframe_tail" });
+    @export(&cframe, .{ .name = "janet_fiber_cframe" });
+    @export(&popframe, .{ .name = "janet_fiber_popframe" });
 }
 
 fn status(fiber: *janet.value.Fiber) callconv(.c) c_uint {
@@ -51,4 +54,20 @@ fn funcframe(fiber: *janet.value.Fiber, func: *janet.value.Function) callconv(.c
         error.OutOfMemory => janet.oom(),
     };
     return 0;
+}
+
+fn funcframe_tail(fiber: *janet.value.Fiber, func: *janet.value.Function) callconv(.c) c_int {
+    _ = fiber.stack.push_funcframe_tail(janet.Runtime.default(), func) catch |err| switch (err) {
+        error.ArityMismatch => return 1,
+        error.OutOfMemory => janet.oom(),
+    };
+    return 0;
+}
+
+fn cframe(fiber: *janet.value.Fiber, cfunc: janet.value.CFunction) callconv(.c) void {
+    _ = fiber.stack.push_cframe(janet.Runtime.default(), cfunc) catch janet.oom();
+}
+
+fn popframe(fiber: *janet.value.Fiber) callconv(.c) void {
+    fiber.stack.pop_frame();
 }

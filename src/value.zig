@@ -10,6 +10,8 @@ const x = @import("x");
 
 const Value = janet.Value;
 
+pub const CFunction = *const fn (argc: i32, argv: [*]Value) callconv(.c) Value;
+
 /// Maximum allowed proto search depth. Arbitrary picked number
 pub const max_proto_depth: usize = 200;
 
@@ -1349,6 +1351,7 @@ pub const Tuple = extern struct {
 extern fn janet_hash(v: Value) callconv(.c) i32;
 extern fn janet_equals(lhs: Value, rhs: Value) callconv(.c) c_int;
 extern fn janet_compare(lhs: Value, rhs: Value) callconv(.c) c_int;
+extern fn janet_env_detach(env: ?*FunctionEnvironment) callconv(.c) void;
 
 pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));
@@ -1559,36 +1562,49 @@ pub const Fiber = extern struct {
             self.data.len = end;
         }
 
+        /// Pack the values passed in varargs position into a single struct or tuple.
+        /// Update the stack size accordingly.
+        fn pack_varargs(self: *Stack, rt: *janet.Runtime, def: *FunctionDefinition) Allocator.Error!void {
+            assert(def.flags.vararg);
+
+            const varargs_index = self.stackstart + def.arity;
+
+            const varargs: []Value = if (varargs_index >= self.data.len) blk: {
+                assert(self.data.capacity >= varargs_index);
+                // This can happen if one does not pass the optional args.
+                // In that case, fill with nil.
+                @memset(self.data.ptr[self.data.len..varargs_index], .nil);
+                break :blk &.{};
+            } else blk: {
+                break :blk self.data.ptr[varargs_index..self.data.len];
+            };
+
+            self.data.ptr[varargs_index] = if (def.flags.structarg) varargs: {
+                // Janet silently drops an unmatched final structarg after reporting a compiler lint.
+                const count_even = varargs.len - varargs.len % 2;
+                break :varargs .@"struct"(try .from_slice(rt, varargs[0..count_even]));
+            } else varargs: {
+                break :varargs .tuple(try .from_slice(rt, varargs));
+            };
+
+            self.data.len = varargs_index + 1;
+        }
+
         pub fn push_funcframe(self: *Stack, rt: *janet.Runtime, func: *Function) error{ ArityMismatch, OutOfMemory }!View {
             const def = func.def;
-            const old_top = self.data.len;
             const next_frame_begin = self.stackstart;
-            const arity: i64 = old_top - next_frame_begin;
+            const arity: i64 = self.data.len - next_frame_begin;
 
             if (arity < def.min_arity or arity > def.max_arity) return error.ArityMismatch;
 
             const next_stack_top = next_frame_begin + def.slotcount + frame_size;
             try self.reserve_total(rt, next_stack_top);
 
-            const varargs: ?Value = if (def.flags.vararg) varargs: {
-                const tuple_begin = next_frame_begin + def.arity;
-                const values = if (tuple_begin < old_top)
-                    self.data.ptr[tuple_begin..old_top]
-                else
-                    &.{};
+            if (def.flags.vararg) try self.pack_varargs(rt, def);
 
-                if (def.flags.structarg) {
-                    // Janet will trim structargs to even len, silently dropping the last value.
-                    // It will be reported as a compiler lint.
-                    const count_even = values.len - values.len % 2;
-                    break :varargs .@"struct"(try Struct.from_slice(rt, values[0..count_even]));
-                } else {
-                    break :varargs .tuple(try Tuple.from_slice(rt, values));
-                }
-            } else null;
-
-            if (old_top < next_stack_top) {
-                @memset(self.data.ptr[old_top..next_stack_top], .nil);
+            // might be vacant now due to varargs packing
+            if (self.data.len < next_stack_top) {
+                @memset(self.data.ptr[self.data.len..next_stack_top], .nil);
             }
 
             const view: View = .{
@@ -1597,7 +1613,7 @@ pub const Fiber = extern struct {
             };
             view.frame(self.data.ptr[0..next_stack_top]).* = .{
                 .func = func,
-                .pc = def.bytecode,
+                .pc = .{ .bytecode = def.bytecode },
                 .env = null,
                 .prev = self.frame,
                 .flags = .{
@@ -1607,11 +1623,87 @@ pub const Fiber = extern struct {
                 },
             };
 
-            if (varargs) |value| {
-                const tuple_begin = next_frame_begin + def.arity;
-                @memset(self.data.ptr[tuple_begin..next_stack_top], .nil);
-                self.data.ptr[tuple_begin] = value;
+            self.frame = next_frame_begin;
+            self.stackstart = next_stack_top;
+            self.data.len = next_stack_top;
+            return view;
+        }
+
+        pub fn push_funcframe_tail(self: *Stack, rt: *janet.Runtime, func: *Function) error{ ArityMismatch, OutOfMemory }!View {
+            const def = func.def;
+            const arity: i64 = self.data.len - self.stackstart;
+
+            if (arity < def.min_arity or arity > def.max_arity) return error.ArityMismatch;
+
+            const next_frame_top = self.frame + def.slotcount;
+            const next_stack_top = next_frame_top + frame_size;
+            const tuple_begin = self.stackstart + def.arity;
+            const capacity_needed = if (def.flags.vararg)
+                @max(next_stack_top, tuple_begin + 1)
+            else
+                next_stack_top;
+            try self.reserve_total(rt, capacity_needed);
+
+            const view: View = .{
+                .frame_begin = self.frame,
+                .frame_end = self.stackstart,
+            };
+            const frame = view.frame(self.data.ptr[0..self.data.capacity]);
+            const frame_prev = frame.*;
+            if (frame_prev.func != null) janet_env_detach(frame_prev.env);
+
+            if (def.flags.vararg) try self.pack_varargs(rt, def);
+
+            const stack_size = self.data.len - self.stackstart;
+            @memmove(
+                self.data.ptr[self.frame..][0..stack_size],
+                self.data.ptr[self.stackstart..][0..stack_size],
+            );
+            if (self.frame + stack_size < next_frame_top) {
+                @memset(self.data.ptr[self.frame + stack_size .. next_frame_top], .nil);
             }
+
+            var flags = frame_prev.flags;
+            flags.tailcall = true;
+            flags.hasenv = false;
+            frame.* = .{
+                .func = func,
+                .pc = .{ .bytecode = def.bytecode },
+                .env = null,
+                .prev = frame_prev.prev,
+                .flags = flags,
+            };
+
+            self.stackstart = next_stack_top;
+            self.data.len = next_stack_top;
+            return .{
+                .frame_begin = self.frame,
+                .frame_end = next_stack_top,
+            };
+        }
+
+        pub fn push_cframe(self: *Stack, rt: *janet.Runtime, cfunc: CFunction) Allocator.Error!View {
+            const old_frame = self.frame;
+            const next_frame_begin = self.stackstart;
+            const next_stack_top = self.data.len + frame_size;
+            try self.reserve_total(rt, next_stack_top);
+            @memset(self.data.ptr[self.data.len..next_stack_top], .nil);
+
+            const view: View = .{
+                .frame_begin = next_frame_begin,
+                .frame_end = next_stack_top,
+            };
+            view.frame(self.data.ptr[0..next_stack_top]).* = .{
+                .func = null,
+                .pc = .{ .cfunction = cfunc },
+                .env = null,
+                .prev = old_frame,
+                .flags = .{
+                    .tailcall = false,
+                    .entrance = false,
+                    .hasenv = false,
+                },
+            };
 
             self.frame = next_frame_begin;
             self.stackstart = next_stack_top;
@@ -1619,12 +1711,33 @@ pub const Fiber = extern struct {
             return view;
         }
 
+        pub fn pop_frame(self: *Stack) void {
+            if (self.frame == 0) return;
+
+            const view: View = .{
+                .frame_begin = self.frame,
+                .frame_end = self.stackstart,
+            };
+            const frame = view.frame(self.data.ptr[0..self.data.len]);
+            const prev = frame.prev;
+            if (frame.func != null) janet_env_detach(frame.env);
+
+            self.data.len = self.frame;
+            self.stackstart = self.frame;
+            self.frame = prev;
+        }
+
         pub const Frame = extern struct {
             func: ?*Function,
-            pc: ?[*]janet.bytecode.Quadruple,
+            pc: ProgramCounter,
             env: ?*FunctionEnvironment,
             prev: u32,
             flags: Frame.Flags,
+
+            pub const ProgramCounter = extern union {
+                bytecode: ?[*]const janet.bytecode.Quadruple,
+                cfunction: CFunction,
+            };
 
             pub const Flags = packed struct(u32) {
                 tailcall: bool,
