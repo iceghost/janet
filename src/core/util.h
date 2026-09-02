@@ -225,6 +225,7 @@ typedef struct {
 void janet_lib_io(JanetTable *env);
 void janet_lib_math(JanetTable *env);
 void janet_lib_array(JanetTable *env);
+void janet_lib_zig(JanetTable *env);
 void janet_lib_tuple(JanetTable *env);
 void janet_lib_buffer(JanetTable *env);
 void janet_lib_table(JanetTable *env);

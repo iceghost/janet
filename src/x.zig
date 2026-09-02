@@ -1,10 +1,10 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const meta = std.meta;
 const Io = std.Io;
 
-pub const bit_set = @import("x/bit_set.zig");
 pub const array_list = @import("x/array_list.zig");
+pub const bit_set = @import("x/bit_set.zig");
+pub const meta = @import("x/meta.zig");
 
 test {
     _ = bit_set;
@@ -20,13 +20,13 @@ pub const testing = struct {
 };
 
 pub fn mem_chop_head(m: anytype, comptime Head: type) struct {
-    *align(meta.alignment(@TypeOf(m))) Head,
+    *align(std.meta.alignment(@TypeOf(m))) Head,
     []align(@alignOf(Head)) u8,
 } {
     const head_size = @sizeOf(Head);
     assert(m.len >= head_size);
 
-    const head: *align(meta.alignment(@TypeOf(m))) Head = @ptrCast(m.ptr);
+    const head: *align(std.meta.alignment(@TypeOf(m))) Head = @ptrCast(m.ptr);
     const tail_pointer: [*]align(@alignOf(Head)) u8 = @alignCast(m.ptr + head_size);
     return .{ head, tail_pointer[0 .. m.len - head_size] };
 }

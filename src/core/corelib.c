@@ -1135,6 +1135,7 @@ static void janet_load_libs(JanetTable *env) {
     janet_lib_io(env);
     janet_lib_math(env);
     janet_lib_array(env);
+    janet_lib_zig(env);
     janet_lib_tuple(env);
     janet_lib_buffer(env);
     janet_lib_table(env);

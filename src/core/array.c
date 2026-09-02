@@ -34,16 +34,6 @@ void janet_array_trim(JanetArray *array);
 
 /* C Functions */
 
-JANET_CORE_FN(cfun_array_new,
-              "(array/new capacity)",
-              "Creates a new empty array with a pre-allocated capacity. The same as "
-              "`(array)` but can be more efficient if the maximum size of an array is known.") {
-    janet_fixarity(argc, 1);
-    int32_t cap = janet_getinteger(argv, 0);
-    JanetArray *array = janet_array(cap);
-    return janet_wrap_array(array);
-}
-
 JANET_CORE_FN(cfun_array_weak,
               "(array/weak capacity)",
               "Creates a new empty array with a pre-allocated capacity and support for weak references. Similar to `array/new`.") {
@@ -284,7 +274,6 @@ JANET_CORE_FN(cfun_array_clear,
 /* Load the array module */
 void janet_lib_array(JanetTable *env) {
     JanetRegExt array_cfuns[] = {
-        JANET_CORE_REG("array/new", cfun_array_new),
         JANET_CORE_REG("array/weak", cfun_array_weak),
         JANET_CORE_REG("array/new-filled", cfun_array_new_filled),
         JANET_CORE_REG("array/fill", cfun_array_fill),

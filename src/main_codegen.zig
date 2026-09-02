@@ -4,7 +4,7 @@ const builtin = @import("builtin");
 const x = @import("x");
 
 pub const janet_options = .{
-    .bootstrap = false,
+    .bootstrap = true, // we don't use a core image
     .is_codegen = true,
     .nanbox = true,
 };

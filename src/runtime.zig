@@ -14,6 +14,8 @@ c: *C,
 symbol_pool: janet.value.String.Pool,
 symbol_generator: janet.value.String.Generator,
 
+panic_msg: janet.Value = .nil,
+
 /// Global state shared by all Janet VM instances
 pub const Shared = struct {
     gpa: Allocator,
@@ -81,10 +83,10 @@ pub const Signal = enum(c_int) {
     event,
 };
 
-extern fn janet_signal(sig: Signal, v: janet.Value) callconv(.c) noreturn;
+extern fn janet_signalv(sig: Signal, v: janet.Value) callconv(.c) noreturn;
 pub fn signal(rt: *Runtime, sig: Signal, v: janet.Value) noreturn {
     _ = rt;
-    janet_signal(sig, v);
+    janet_signalv(sig, v);
 }
 
 pub fn oom(rt: *Runtime) noreturn {
@@ -92,9 +94,9 @@ pub fn oom(rt: *Runtime) noreturn {
     @panic("out of memory");
 }
 
-pub fn panic(rt: *Runtime, fmt: []const u8, args: anytype) error{JanetPanic} {
-    _ = rt; // autofix
-    _ = fmt; // autofix
-    _ = args; // autofix
+pub fn panic(rt: *Runtime, comptime fmt: []const u8, args: anytype) error{JanetPanic} {
+    const msg = std.fmt.allocPrint(rt.gpa, fmt, args) catch rt.oom();
+    defer rt.gpa.free(msg);
+    rt.panic_msg = janet.Value.string(rt, msg) catch rt.oom();
     return error.JanetPanic;
 }

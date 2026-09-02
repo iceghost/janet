@@ -24,10 +24,10 @@ pub fn build(b: *Build) !void {
     const run_test_x = b.addRunArtifact(test_x);
     step_test.dependOn(&run_test_x.step);
 
-    const path_core_image = build_core_image(b, .{ .mod_x = mod_x });
-    const path_generated = build_generated(b, .{
+    const path_generated = build_generated(b, .{ .mod_x = mod_x });
+    const path_core_image = build_core_image(b, .{
         .mod_x = mod_x,
-        .path_core_image = path_core_image,
+        .path_generated = path_generated,
     });
 
     const exe = b.addExecutable(.{
@@ -104,7 +104,13 @@ fn create_janet_module(b: *std.Build, options: struct {
         mod.addAnonymousImport("core.jimage", .{ .root_source_file = core_image });
     }
     if (options.path_generated) |generated| {
-        mod.addAnonymousImport("generated", .{ .root_source_file = generated });
+        mod.addAnonymousImport("generated", .{
+            .root_source_file = generated,
+            .target = options.target,
+            .optimize = options.optimize,
+        });
+        mod.import_table.get("generated").?.addImport("janet", mod);
+        mod.import_table.get("generated").?.addImport("x", options.module_x);
     }
     return mod;
 }
@@ -168,11 +174,11 @@ fn add_cjanet(b: *std.Build, mod: *std.Build.Module, options: struct {
                 "src/boot/system_test.c",
                 "src/boot/table_test.c",
             },
-            else => core_src,
+            .executable, .library => core_src,
         },
         .flags = switch (options.kind) {
             .bootstrap => c_flags ++ .{"-DJANET_BOOTSTRAP"},
-            else => c_flags ++ .{"-fvisibility=hidden"},
+            .executable, .library => c_flags ++ .{"-fvisibility=hidden"},
         },
     });
     mod.addIncludePath(b.path("src/boot"));
@@ -188,8 +194,12 @@ fn add_cjanet(b: *std.Build, mod: *std.Build.Module, options: struct {
 
 fn build_core_image(b: *std.Build, options: struct {
     mod_x: *std.Build.Module,
+    path_generated: std.Build.LazyPath,
 }) std.Build.LazyPath {
-    const mod = create_janet_module(b, .{ .module_x = options.mod_x });
+    const mod = create_janet_module(b, .{
+        .module_x = options.mod_x,
+        .path_generated = options.path_generated,
+    });
     const boot = b.addExecutable(.{
         .name = "janet-boot",
         .root_module = b.createModule(.{
@@ -214,13 +224,11 @@ fn build_core_image(b: *std.Build, options: struct {
 
 fn build_generated(b: *std.Build, options: struct {
     mod_x: *std.Build.Module,
-    path_core_image: std.Build.LazyPath,
 }) std.Build.LazyPath {
     const mod = create_janet_module(b, .{
         .module_x = options.mod_x,
         .target = b.graph.host,
         .optimize = .ReleaseSafe,
-        .path_core_image = options.path_core_image,
     });
     const codegen = b.addTest(.{
         .root_module = mod,
@@ -231,9 +239,6 @@ fn build_generated(b: *std.Build, options: struct {
     });
     codegen.root_module.addImport("janet", codegen.root_module);
     codegen.root_module.addImport("x", options.mod_x);
-    add_cjanet(b, codegen.root_module, .{
-        .kind = .library,
-    });
 
     const run_codegen = b.addRunArtifact(codegen);
     return run_codegen.captureStdOut(.{ .basename = "generated.zig" });
