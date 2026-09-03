@@ -5,6 +5,12 @@ const Allocator = mem.Allocator;
 const janet = @import("janet");
 const x = @import("x");
 
+pub const Compiler = @import("bytecode/compiler.zig");
+
+comptime {
+    _ = Compiler;
+}
+
 pub const OpCode = enum(u7) {
     noop,
     @"error",
@@ -141,3 +147,16 @@ pub const Wip = struct {
         self.emit(.{ .op = .load_constant, .payload = @bitCast(payload) });
     }
 };
+
+pub fn compile(
+    rt: *janet.Runtime,
+    source: janet.Value,
+    env: *janet.value.Table,
+    where: []const u8,
+) void {
+    _ = rt; // autofix
+    _ = source; // autofix
+    _ = env; // autofix
+    _ = where; // autofix
+    //
+}
