@@ -5,7 +5,7 @@ const Allocator = mem.Allocator;
 const janet = @import("janet");
 const x = @import("x");
 
-pub const OpCode = enum(u8) {
+pub const OpCode = enum(u7) {
     noop,
     @"error",
     typecheck,
@@ -88,6 +88,7 @@ pub const OpCode = enum(u8) {
 
 pub const Quadruple = packed struct(u32) {
     op: OpCode,
+    breakpoint: bool,
     payload: u24,
 };
 
