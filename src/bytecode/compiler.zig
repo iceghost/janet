@@ -122,6 +122,14 @@ pub const C = extern struct {
             accept_splice: bool = false,
             reserved: u12 = 0,
         };
+
+        pub fn init(compiler: *Compiler) Fopts {
+            return .{
+                .compiler = &compiler.c,
+                .flags = .{},
+                .hint = .init_constant(.nil),
+            };
+        }
     };
 
     /// A symbol and slot pair.
@@ -151,18 +159,36 @@ pub const C = extern struct {
         flags: Flags,
 
         pub const Flags = packed struct(u32) {
-            type: u16,
-            constant: bool,
-            named: bool,
-            mutable: bool,
-            ref: bool,
-            returned: bool,
-            dep_note: bool,
-            dep_warn: bool,
-            dep_error: bool,
-            spliced: bool,
-            reserved: u7,
+            type: std.bit_set.IntegerBitSet(16) = .empty,
+            constant: bool = false,
+            named: bool = false,
+            mutable: bool = false,
+            ref: bool = false,
+            returned: bool = false,
+            dep_note: bool = false,
+            dep_warn: bool = false,
+            dep_error: bool = false,
+            spliced: bool = false,
+            reserved: u7 = 0,
         };
+
+        pub fn init_constant(v: janet.Value) Slot {
+            var slot: Slot = .{
+                .flags = .{
+                    .constant = true,
+                },
+                .index = -1,
+                .constant = v,
+                .envindex = -1,
+            };
+
+            // FIXME: bitset does not allow setting in packed struct
+            var typeset: std.bit_set.IntegerBitSet(16) = .empty;
+            typeset.set(@intFromEnum(v.repr.unwrap_tag()));
+            slot.flags.type = typeset;
+
+            return slot;
+        }
     };
 };
 

@@ -30,14 +30,6 @@
 #include "state.h"
 #endif
 
-JanetFopts janetc_fopts_default(JanetCompiler *c) {
-    JanetFopts ret;
-    ret.compiler = c;
-    ret.flags = 0;
-    ret.hint = janetc_cslot(janet_wrap_nil());
-    return ret;
-}
-
 /* Throw an error with a janet string. */
 void janetc_error(JanetCompiler *c, const uint8_t *m) {
     /* Don't override first error */
