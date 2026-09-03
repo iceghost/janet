@@ -338,6 +338,22 @@ pub const Box = extern struct {
     };
 };
 
+pub const Buffer = extern struct {
+    gc: janet.gc.Object,
+    count: u32,
+    capacity: u32,
+    data: [*]u8,
+
+    pub const empty: Array = .{
+        .gc = .disabled,
+        .count = 0,
+        .capacity = 0,
+        .data = &.{},
+    };
+
+    pub const count_max = std.math.maxInt(i32);
+};
+
 pub const String = extern struct {
     gc: janet.gc.Object,
     size: u32,
