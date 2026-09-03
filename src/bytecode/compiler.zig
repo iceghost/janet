@@ -330,9 +330,12 @@ pub fn compile_value(
             } else if ((@as(u32, @bitCast(tuple.gc.flags)) & 0x10000) != 0) {
                 result = janetc_tuple(options, source);
             } else {
-                var subflags: C.Fopts.Flags = .{};
-                const function = try compiler.compile_value(rt, .init_constant(.nil), subflags, values[0]);
-                subflags.type = subflags.type.set(.function).set(.cfunction);
+                const function = try compiler.compile_value(
+                    rt,
+                    .init_constant(.nil),
+                    .{},
+                    values[0],
+                );
                 result = janetc_call(
                     options,
                     janetc_toslots(&compiler.c, values.ptr + 1, @intCast(values.len - 1)),
