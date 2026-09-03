@@ -8,6 +8,7 @@ comptime {
     @export(&fopts_default, .{ .name = "janetc_fopts_default" });
     @export(&value, .{ .name = "janetc_value" });
     @export(&toslots, .{ .name = "janetc_toslots" });
+    @export(&toslotskv, .{ .name = "janetc_toslotskv" });
 }
 
 fn default(
@@ -53,6 +54,25 @@ fn toslots(
     const rt: *janet.Runtime = .default();
     const compiler: *Compiler = @fieldParentPtr("c", c);
     return compiler.compile_value_many(rt, x.c_slice(values, len)) catch |err| switch (err) {
+        error.OutOfMemory => rt.oom(),
+    };
+}
+
+fn toslotskv(c: *Compiler.C, ds: janet.Value) callconv(.c) x.array_list.Thin(Compiler.C.Slot) {
+    const rt: *janet.Runtime = .default();
+    const compiler: *Compiler = @fieldParentPtr("c", c);
+
+    var scratch = compiler.arena_per_compilation.promote(rt.gpa);
+    defer compiler.arena_per_compilation = scratch.state;
+    return compiler.compile_value_many_kv(
+        rt,
+        scratch.allocator(),
+        switch (ds.repr.unwrap_tag()) {
+            .@"struct" => .from_struct(ds.unwrap().@"struct"),
+            .table => .from_table(ds.unwrap().table),
+            else => unreachable,
+        },
+    ) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
     };
 }

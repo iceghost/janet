@@ -386,6 +386,63 @@ pub fn compile_value_many(
     return slots;
 }
 
+fn sorted_keys(
+    rt: *janet.Runtime,
+    arena: mem.Allocator,
+    view: janet.value.DictView,
+) ![]u32 {
+    var indices: std.ArrayList(u32) = try .initCapacity(arena, view.count);
+    for (view.ptr[0..view.capacity], 0..) |v, i| {
+        if (!v.key.checktype(.nil)) indices.appendAssumeCapacity(@intCast(i));
+    }
+
+    std.mem.sortUnstableContext(0, indices.items.len, struct {
+        rt: *janet.Runtime,
+        entries: []const janet.value.Pair,
+        indices: []u32,
+
+        pub fn lessThan(ctx: @This(), lhs: usize, rhs: usize) bool {
+            return janet.value.order(ctx.rt, ctx.entries[ctx.indices[lhs]].key, ctx.entries[ctx.indices[rhs]].key) == .lt;
+        }
+
+        pub fn swap(ctx: @This(), lhs: usize, rhs: usize) void {
+            std.mem.swap(u32, &ctx.indices[lhs], &ctx.indices[rhs]);
+        }
+    }{
+        .rt = rt,
+        .entries = view.ptr[0..view.capacity],
+        .indices = indices.items,
+    });
+
+    return try indices.toOwnedSlice(arena);
+}
+
+pub fn compile_value_many_kv(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    arena: mem.Allocator,
+    view: janet.value.DictView,
+) !x.array_list.Thin(C.Slot) {
+    const indices = try sorted_keys(rt, arena, view);
+    var res: x.array_list.Thin(C.Slot) = .empty;
+    try res.reserve_total_precise(arena, @intCast(2 * indices.len));
+    for (indices) |i| {
+        res.append(try compiler.compile_value(
+            rt,
+            .init_constant(.nil),
+            .{ .accept_splice = true },
+            view.ptr[i].key,
+        ));
+        res.append(try compiler.compile_value(
+            rt,
+            .init_constant(.nil),
+            .{ .accept_splice = true },
+            view.ptr[i].val,
+        ));
+    }
+    return res;
+}
+
 fn @"error"(compiler: *Compiler, str: *janet.value.String) Error {
     // don't override first error
     if (compiler.c.result.status == .@"error") {

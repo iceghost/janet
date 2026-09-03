@@ -194,6 +194,7 @@ pub const Box = extern struct {
         array: *Array,
         table: *Table,
         tuple: *Tuple,
+        @"struct": *Struct,
     } {
         return switch (v.repr.unwrap_tag()) {
             .number => .{ .number = v.repr.float },
@@ -207,6 +208,10 @@ pub const Box = extern struct {
             .tuple => {
                 const p: Tuple.Extern.Pointer = .{ .ptr = @ptrFromInt(v.repr.pointer_bits()) };
                 return .{ .tuple = p.cast_head() };
+            },
+            .@"struct" => {
+                const p: Struct.Extern.Pointer = .{ .ptr = @ptrFromInt(v.repr.pointer_bits()) };
+                return .{ .@"struct" = p.cast_head() };
             },
             else => @panic("unimplemented"),
         };
@@ -729,14 +734,14 @@ pub const Struct = extern struct {
             const entry_hash = hash(entry.key);
             const entry_distance = (i + self.capacity - (entry_hash & mask)) & mask;
 
-            const order: std.math.Order = if (distance != entry_distance)
+            const ord: std.math.Order = if (distance != entry_distance)
                 std.math.order(distance, entry_distance)
             else if (candidate_hash != entry_hash)
                 std.math.order(candidate_hash, entry_hash)
             else
                 std.math.order(janet_compare(candidate.key, entry.key), 0);
 
-            switch (order) {
+            switch (ord) {
                 .lt => {},
                 .eq => {
                     if (replace) entry.val = candidate.val;
@@ -1386,6 +1391,16 @@ pub const Tuple = extern struct {
 extern fn janet_hash(v: Value) callconv(.c) i32;
 extern fn janet_equals(lhs: Value, rhs: Value) callconv(.c) c_int;
 extern fn janet_compare(lhs: Value, rhs: Value) callconv(.c) c_int;
+
+pub fn order(rt: *janet.Runtime, lhs: Value, rhs: Value) std.math.Order {
+    // need this for comparing abstracts
+    _ = rt;
+    const res = janet_compare(lhs, rhs);
+    if (res < 0) return .lt;
+    if (res == 0) return .eq;
+    if (res > 0) return .gt;
+    unreachable;
+}
 
 pub fn hash(v: Value) u32 {
     return @bitCast(janet_hash(v));

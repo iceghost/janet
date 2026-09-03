@@ -479,33 +479,6 @@ JanetSlot janetc_gettarget(JanetFopts opts) {
     return slot;
 }
 
-/* Get a bunch of slots for function arguments */
-JanetSlot *janetc_toslotskv(JanetCompiler *c, Janet ds) {
-    JanetSlot *ret = NULL;
-    JanetFopts subopts = janetc_fopts_default(c);
-    subopts.flags |= JANET_FOPTS_ACCEPT_SPLICE;
-    const JanetKV *kvs = NULL;
-    int32_t cap = 0, len = 0;
-    janet_dictionary_view(ds, &kvs, &len, &cap);
-    /* Sort keys for stability of order? */
-    int32_t *index_buf;
-    int32_t index_buf_stack[32];
-    int32_t *index_buf_heap = NULL;
-    if (len < 32) {
-        index_buf = index_buf_stack;
-    } else {
-        index_buf_heap = janet_smalloc(sizeof(int32_t) * len);
-        index_buf = index_buf_heap;
-    }
-    if (len) janet_sorted_keys(kvs, cap, index_buf);
-    for (int32_t i = 0; i < len; i++) {
-        janet_v_push(ret, janetc_value(subopts, kvs[index_buf[i]].key));
-        janet_v_push(ret, janetc_value(subopts, kvs[index_buf[i]].value));
-    }
-    if (index_buf_heap) janet_sfree(index_buf_heap);
-    return ret;
-}
-
 /* Push slots loaded via janetc_toslots. Return the minimum number of slots pushed,
  * or -1 - min_arity if there is a splice. (if there is no splice, min_arity is also
  * the maximum possible arity). */
