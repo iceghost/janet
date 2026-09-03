@@ -117,7 +117,7 @@ pub const C = extern struct {
         flags: Flags,
 
         pub const Flags = packed struct(u32) {
-            type: std.bit_set.IntegerBitSet(16) = .empty,
+            type: x.bit_set.Integer(16) = .empty,
             tail: bool = false,
             hint: bool = false,
             drop: bool = false,
@@ -166,7 +166,7 @@ pub const C = extern struct {
         flags: Flags,
 
         pub const Flags = packed struct(u32) {
-            type: std.bit_set.IntegerBitSet(16) = .empty,
+            type: x.bit_set.Integer(16) = .empty,
             constant: bool = false,
             named: bool = false,
             mutable: bool = false,
@@ -189,10 +189,7 @@ pub const C = extern struct {
                 .envindex = -1,
             };
 
-            // FIXME: bitset does not allow setting in packed struct
-            var typeset: std.bit_set.IntegerBitSet(16) = .empty;
-            typeset.set(@intFromEnum(v.repr.unwrap_tag()));
-            slot.flags.type = typeset;
+            slot.flags.type = slot.flags.type.set(@intFromEnum(v.repr.unwrap_tag()));
 
             return slot;
         }
@@ -268,7 +265,7 @@ pub fn compile(compiler: *Compiler, rt: *janet.Runtime, source: janet.Value) !C.
     janetc_scope(&compiler.scope_root, &compiler.c, .{ .function = true, .top = true }, "root");
 
     const flags: C.Fopts.Flags = .{
-        .type = .initFull(),
+        .type = .full,
         .tail = true,
     };
     _ = try compiler.compile_value(rt, .init_constant(.nil), flags, source);
@@ -335,10 +332,7 @@ pub fn compile_value(
             } else {
                 var subflags: C.Fopts.Flags = .{};
                 const function = try compiler.compile_value(rt, .init_constant(.nil), subflags, values[0]);
-                var types = subflags.type;
-                types.set(@intFromEnum(janet.Value.Tag.function));
-                types.set(@intFromEnum(janet.Value.Tag.cfunction));
-                subflags.type = types;
+                subflags.type = subflags.type.set(@intFromEnum(janet.Value.Tag.function)).set(@intFromEnum(janet.Value.Tag.cfunction));
                 result = janetc_call(
                     options,
                     janetc_toslots(&compiler.c, values.ptr + 1, @intCast(values.len - 1)),

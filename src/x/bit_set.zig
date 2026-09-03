@@ -151,3 +151,169 @@ test Dynamic {
     defer copy.deinit(std.testing.allocator);
     try std.testing.expect(copy.is_set(64));
 }
+
+/// A bit set with static size, which is backed by a single integer.
+/// This set is good for sets with a small size, but may generate
+/// inefficient code for larger sets, especially in debug mode.
+pub fn Integer(comptime size: u16) type {
+    return packed struct(MaskInt) {
+        const Self = @This();
+
+        // TODO: Make this a comptime field once those are fixed
+        /// The number of items in this bit set
+        pub const bit_length: usize = size;
+
+        /// The integer type used to represent a mask in this bit set
+        pub const MaskInt = std.meta.Int(.unsigned, size);
+
+        /// The integer type used to shift a mask in this bit set
+        pub const ShiftInt = std.math.Log2Int(MaskInt);
+
+        /// The bit mask, as a single integer
+        mask: MaskInt,
+
+        /// A bit set with no elements present.
+        pub const empty: Self = .{ .mask = 0 };
+
+        /// A bit set with all elements present.
+        pub const full: Self = .{ .mask = ~@as(MaskInt, 0) };
+
+        /// Returns the number of bits in this bit set
+        pub fn capacity(self: Self) usize {
+            _ = self;
+            return bit_length;
+        }
+
+        /// Returns true if the bit at the specified index
+        /// is present in the set, false otherwise.
+        pub fn is_set(self: Self, index: usize) bool {
+            assert(index < bit_length);
+            return (self.mask & mask_bit(index)) != 0;
+        }
+
+        /// Returns the total number of set bits in this bit set.
+        pub fn count(self: Self) usize {
+            return @popCount(self.mask);
+        }
+
+        /// Returns a new bit set with the specified bit set to `value`.
+        pub fn set_value(self: Self, index: usize, value: bool) Self {
+            assert(index < bit_length);
+            if (MaskInt == u0) return self;
+            const bit = mask_bit(index);
+            const new_bit = bit & std.math.boolMask(MaskInt, value);
+            return .{ .mask = (self.mask & ~bit) | new_bit };
+        }
+
+        /// Returns a new bit set with the specified bit present.
+        pub fn set(self: Self, index: usize) Self {
+            return self.set_value(index, true);
+        }
+
+        /// Returns a new bit set with the specified bit absent.
+        pub fn unset(self: Self, index: usize) Self {
+            return self.set_value(index, false);
+        }
+
+        /// Returns a new bit set with the specified bit flipped.
+        pub fn toggle(self: Self, index: usize) Self {
+            assert(index < bit_length);
+            return .{ .mask = self.mask ^ mask_bit(index) };
+        }
+
+        /// Returns a new bit set with bits present in `toggles` flipped.
+        pub fn toggle_set(self: Self, toggles: Self) Self {
+            return .{ .mask = self.mask ^ toggles.mask };
+        }
+
+        /// Returns a new bit set with every bit flipped.
+        pub fn toggle_all(self: Self) Self {
+            return .{ .mask = ~self.mask };
+        }
+
+        /// Returns the union of two bit sets.
+        pub fn union_with(self: Self, other: Self) Self {
+            return .{ .mask = self.mask | other.mask };
+        }
+
+        /// Returns the intersection of two bit sets.
+        pub fn intersect_with(self: Self, other: Self) Self {
+            return .{ .mask = self.mask & other.mask };
+        }
+
+        /// Finds the index of the first set bit.
+        /// If no bits are set, returns null.
+        pub fn find_first_set(self: Self) ?usize {
+            const mask = self.mask;
+            if (mask == 0) return null;
+            return @ctz(mask);
+        }
+
+        /// Finds the index of the last set bit.
+        /// If no bits are set, returns null.
+        pub fn find_last_set(self: Self) ?usize {
+            const mask = self.mask;
+            if (mask == 0) return null;
+            return bit_length - @clz(mask) - 1;
+        }
+
+        /// Returns true iff every corresponding bit in both
+        /// bit sets are the same.
+        pub fn eql(self: Self, other: Self) bool {
+            return bit_length == 0 or self.mask == other.mask;
+        }
+
+        /// Returns true iff the first bit set is the subset
+        /// of the second one.
+        pub fn subset_of(self: Self, other: Self) bool {
+            return self.intersect_with(other).eql(self);
+        }
+
+        /// Returns true iff the first bit set is the superset
+        /// of the second one.
+        pub fn superset_of(self: Self, other: Self) bool {
+            return other.subset_of(self);
+        }
+
+        /// Returns the complement bit sets. Bits in the result
+        /// are set if the corresponding bits were not set.
+        pub fn complement(self: Self) Self {
+            return self.toggle_all();
+        }
+
+        /// Returns the xor of two bit sets. Bits in the
+        /// result are set if the corresponding bits were
+        /// not the same in both inputs.
+        pub fn xor_with(self: Self, other: Self) Self {
+            return self.toggle_set(other);
+        }
+
+        /// Returns the difference of two bit sets. Bits in
+        /// the result are set if set in the first but not
+        /// set in the second set.
+        pub fn difference_with(self: Self, other: Self) Self {
+            return self.intersect_with(other.complement());
+        }
+
+        fn mask_bit(index: usize) MaskInt {
+            if (MaskInt == u0) return 0;
+            return @as(MaskInt, 1) << @as(ShiftInt, @intCast(index));
+        }
+    };
+}
+
+test Integer {
+    const BitSet = Integer(8);
+    const original = BitSet.empty.set(1).set(4);
+    const updated = original.unset(1).toggle(3);
+
+    try std.testing.expect(original.is_set(1));
+    try std.testing.expect(original.is_set(4));
+    try std.testing.expect(!original.is_set(3));
+    try std.testing.expect(!updated.is_set(1));
+    try std.testing.expect(updated.is_set(3));
+    try std.testing.expectEqual(@as(usize, 3), updated.find_first_set().?);
+    try std.testing.expectEqual(@as(usize, 4), updated.find_last_set().?);
+    try std.testing.expect(BitSet.empty.union_with(original).eql(original));
+    try std.testing.expect(updated.subset_of(updated.union_with(original)));
+}
