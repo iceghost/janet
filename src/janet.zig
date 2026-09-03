@@ -41,7 +41,10 @@ comptime {
     }
 }
 
-const core_image = if (@import("root").janet_options.bootstrap) "" else @embedFile("core.jimage");
+const core_image = if (is_bootstrap)
+    @panic("core image unavailable in bootstrap")
+else
+    @embedFile("core.jimage");
 const core_image_ptr: [*]const u8 = core_image.ptr;
 const core_image_size: usize = core_image.len;
 
