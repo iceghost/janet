@@ -28,7 +28,7 @@ pub fn Thin(comptime T: type) type {
             }
         };
 
-        fn deinit(self: *Self, gpa: Allocator) void {
+        pub fn deinit(self: *Self, gpa: Allocator) void {
             if (self.base == null) return;
             gpa.free(self.head().allocation());
             self.* = .empty;

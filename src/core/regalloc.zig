@@ -19,7 +19,7 @@ comptime {
 }
 
 fn init(registers: *RegisterAllocator) callconv(.c) void {
-    registers.* = RegisterAllocator.init();
+    registers.* = .empty;
 }
 
 fn deinit(registers: *RegisterAllocator) callconv(.c) void {

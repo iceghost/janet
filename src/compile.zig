@@ -239,20 +239,18 @@ pub const Register = enum(u32) {
         /// Holds which temporary registers are allocated.
         temps: std.bit_set.IntegerBitSet(32),
 
-        pub fn init() Register.Allocator {
-            return .{
-                .bit_set = .empty,
-                .max = @enumFromInt(0),
-                .temps = .empty,
-            };
-        }
+        pub const empty: Register.Allocator = .{
+            .bit_set = .empty,
+            .max = @enumFromInt(0),
+            .temps = .empty,
+        };
 
         pub fn deinit(self: *Register.Allocator, gpa: mem.Allocator) void {
             self.bit_set.deinit(gpa);
         }
 
         pub fn clone(self: *const Register.Allocator, gpa: mem.Allocator) mem.Allocator.Error!Register.Allocator {
-            var copy = init();
+            var copy = empty;
             copy.bit_set = try self.bit_set.clone(gpa);
             copy.max = self.max;
             return copy;
@@ -331,7 +329,7 @@ pub const Register = enum(u32) {
 
 test "Register.Allocator" {
     const gpa = std.testing.allocator;
-    var registers = Register.Allocator.init();
+    var registers: Register.Allocator = .empty;
     defer registers.deinit(gpa);
 
     const reg_0: Register = @enumFromInt(0);
@@ -351,7 +349,7 @@ test "Register.Allocator" {
 
 test "temporary register fallback does not leak" {
     const gpa = std.testing.allocator;
-    var registers = Register.Allocator.init();
+    var registers: Register.Allocator = .empty;
     defer registers.deinit(gpa);
 
     for (0..240) |_| _ = try registers.alloc(gpa);

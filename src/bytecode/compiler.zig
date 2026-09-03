@@ -1,9 +1,12 @@
-const x = @import("x");
+const std = @import("std");
 const janet = @import("janet");
 const Register = janet.compile.Register;
+const x = @import("x");
+
+const Compiler = @This();
 
 c: C,
-diagnostics: *Result.Diagnostics,
+scope_root: C.Scope,
 
 pub const Error = error{JanetCompileFail};
 
@@ -18,11 +21,11 @@ pub const Result = struct {
     };
 };
 
-const C = extern struct {
+pub const C = extern struct {
     /// Pointer to current scope
-    scope: *Scope,
-    buffer: x.array_list.Thin(u32),
-    mapbuffer: x.array_list.Thin(SourceMapping),
+    scope: ?*Scope,
+    buffer: x.array_list.Thin(janet.bytecode.Quadruple) = .empty,
+    mapbuffer: x.array_list.Thin(SourceMapping) = .empty,
     /// Hold the environment
     env: ?*janet.value.Table,
     /// Name of source to attach to generated functions
@@ -34,7 +37,7 @@ const C = extern struct {
     /// Prevent unbounded recursion
     recursion_guard: i32,
     /// Collect linting result
-    lints: ?*janet.Array.Extern,
+    lints: ?*janet.Array,
     /// Cached version of (dyn *redef*)
     is_redef: i32,
 
@@ -67,12 +70,12 @@ const C = extern struct {
         flags: Flags,
 
         pub const Flags = packed struct(i32) {
-            function: bool,
-            env: bool,
-            top: bool,
-            unused: bool,
-            closure: bool,
-            @"while": bool,
+            function: bool = false,
+            env: bool = false,
+            top: bool = false,
+            unused: bool = false,
+            closure: bool = false,
+            @"while": bool = false,
             reserved: u26 = 0,
         };
 
@@ -105,6 +108,22 @@ const C = extern struct {
         };
     };
 
+    pub const Fopts = extern struct {
+        compiler: *C,
+        hint: Slot,
+        /// Accepted primitive types and form-compilation options.
+        flags: Flags,
+
+        pub const Flags = packed struct(u32) {
+            type: std.bit_set.IntegerBitSet(16) = .empty,
+            tail: bool = false,
+            hint: bool = false,
+            drop: bool = false,
+            accept_splice: bool = false,
+            reserved: u12 = 0,
+        };
+    };
+
     /// A symbol and slot pair.
     pub const SymPair = extern struct {
         slot: Slot,
@@ -132,7 +151,7 @@ const C = extern struct {
         flags: Flags,
 
         pub const Flags = packed struct(u32) {
-            type: janet.Value.TypeFlags,
+            type: u16,
             constant: bool,
             named: bool,
             mutable: bool,
@@ -142,6 +161,75 @@ const C = extern struct {
             dep_warn: bool,
             dep_error: bool,
             spliced: bool,
+            reserved: u7,
         };
     };
 };
+
+pub fn init(
+    compiler: *Compiler,
+    env: *janet.value.Table,
+    source: ?[*:0]const u8,
+    lints: ?*janet.Array,
+) void {
+    compiler.scope_root = undefined;
+    compiler.c = .{
+        .scope = null,
+        .buffer = .empty,
+        .mapbuffer = .empty,
+        .env = env,
+        .source = source,
+        .result = .{
+            .funcdef = null,
+            .@"error" = null,
+            .macrofiber = null,
+            .error_mapping = .{ .line = -1, .column = -1 },
+            .status = .ok,
+        },
+        .current_mapping = .{ .line = -1, .column = -1 },
+        .recursion_guard = 1024,
+        .lints = lints,
+        .is_redef = if (env.get_keyword("redef")) |v| @intFromBool(v.repr.truthy()) else 0,
+    };
+}
+
+pub fn deinit(compiler: *Compiler, rt: *janet.Runtime) void {
+    // TODO: use a compiler scratch allocator
+    _ = rt;
+
+    compiler.c.env = null;
+}
+
+extern fn janet_sfree(memory: *anyopaque) callconv(.c) void;
+extern fn janet_cstring(cstring: [*:0]const u8) callconv(.c) [*:0]const u8;
+extern fn janet_def_addflags(def: *janet.value.FunctionDefinition) callconv(.c) void;
+extern fn janetc_scope(scope: *C.Scope, compiler: *C, flags: C.Scope.Flags, name: [*:0]const u8) callconv(.c) void;
+extern fn janetc_popscope(compiler: *C) callconv(.c) void;
+extern fn janetc_pop_funcdef(compiler: *C) callconv(.c) *janet.value.FunctionDefinition;
+extern fn janetc_fopts_default(compiler: *C) callconv(.c) C.Fopts;
+extern fn janetc_value(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
+
+pub fn compile(compiler: *Compiler, rt: *janet.Runtime, source: janet.Value) C.Result {
+    _ = rt;
+
+    janetc_scope(&compiler.scope_root, &compiler.c, .{ .function = true, .top = true }, "root");
+
+    var options = janetc_fopts_default(&compiler.c);
+    options.flags = .{
+        .type = .initFull(),
+        .tail = true,
+    };
+    _ = janetc_value(options, source);
+
+    if (compiler.c.result.status == .ok) {
+        const def = janetc_pop_funcdef(&compiler.c);
+        def.name = janet_cstring("thunk");
+        janet_def_addflags(def);
+        compiler.c.result.funcdef = def;
+    } else {
+        compiler.c.result.error_mapping = compiler.c.current_mapping;
+        janetc_popscope(&compiler.c);
+    }
+
+    return compiler.c.result;
+}

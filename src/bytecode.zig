@@ -152,11 +152,12 @@ pub fn compile(
     rt: *janet.Runtime,
     source: janet.Value,
     env: *janet.value.Table,
-    where: []const u8,
-) void {
-    _ = rt; // autofix
-    _ = source; // autofix
-    _ = env; // autofix
-    _ = where; // autofix
-    //
+    where: ?[*:0]const u8,
+    lints: ?*janet.Array,
+) Compiler.C.Result {
+    var compiler: Compiler = undefined;
+    compiler.init(env, where, lints);
+    defer compiler.deinit(rt);
+
+    return compiler.compile(rt, source);
 }
