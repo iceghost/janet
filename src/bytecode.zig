@@ -154,10 +154,10 @@ pub fn compile(
     env: *janet.value.Table,
     where: ?[*:0]const u8,
     lints: ?*janet.Array,
-) Compiler.C.Result {
+) !Compiler.C.Result {
     var compiler: Compiler = undefined;
     compiler.init(env, where, lints);
     defer compiler.deinit(rt);
 
-    return compiler.compile(rt, source);
+    return try compiler.compile(rt, source);
 }

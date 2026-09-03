@@ -193,6 +193,7 @@ pub const Box = extern struct {
         string: *String,
         array: *Array,
         table: *Table,
+        tuple: *Tuple,
     } {
         return switch (v.repr.unwrap_tag()) {
             .number => .{ .number = v.repr.float },
@@ -203,6 +204,10 @@ pub const Box = extern struct {
             },
             .array => .{ .array = @ptrFromInt(v.repr.pointer_bits()) },
             .table => .{ .table = @ptrFromInt(v.repr.pointer_bits()) },
+            .tuple => {
+                const p: Tuple.Extern.Pointer = .{ .ptr = @ptrFromInt(v.repr.pointer_bits()) };
+                return .{ .tuple = p.cast_head() };
+            },
             else => @panic("unimplemented"),
         };
     }

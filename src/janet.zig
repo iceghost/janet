@@ -12,6 +12,7 @@ pub const Runtime = @import("runtime.zig");
 pub const value = @import("value.zig");
 pub const Array = value.Array;
 pub const Value = value.Box;
+pub const Tuple = value.Tuple;
 
 pub fn oom() noreturn {
     @panic("out of memory");
@@ -23,6 +24,7 @@ pub const c = @cImport({
 
 comptime {
     _ = core;
+    _ = bytecode;
     _ = @import("include/janet.zig");
     _ = @import("core/array.zig");
     _ = @import("core/compile.zig");

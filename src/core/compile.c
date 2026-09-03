@@ -599,7 +599,7 @@ void janetc_throwaway(JanetFopts opts, Janet x) {
 }
 
 /* Compile a call or tailcall instruction */
-static JanetSlot janetc_call(JanetFopts opts, JanetSlot *slots, JanetSlot fun, const Janet *form) {
+JanetSlot janetc_call(JanetFopts opts, JanetSlot *slots, JanetSlot fun, const Janet *form) {
     JanetSlot retslot;
     JanetCompiler *c = opts.compiler;
     int specialized = 0;
@@ -775,7 +775,7 @@ static JanetSlot janetc_maker(JanetFopts opts, JanetSlot *slots, int op) {
     return retslot;
 }
 
-static JanetSlot janetc_array(JanetFopts opts, Janet x) {
+JanetSlot janetc_array(JanetFopts opts, Janet x) {
     JanetCompiler *c = opts.compiler;
     JanetArray *a = janet_unwrap_array(x);
     return janetc_maker(opts,
@@ -783,7 +783,7 @@ static JanetSlot janetc_array(JanetFopts opts, Janet x) {
                         JOP_MAKE_ARRAY);
 }
 
-static JanetSlot janetc_tuple(JanetFopts opts, Janet x) {
+JanetSlot janetc_tuple(JanetFopts opts, Janet x) {
     JanetCompiler *c = opts.compiler;
     const Janet *t = janet_unwrap_tuple(x);
     return janetc_maker(opts,
@@ -791,14 +791,14 @@ static JanetSlot janetc_tuple(JanetFopts opts, Janet x) {
                         JOP_MAKE_TUPLE);
 }
 
-static JanetSlot janetc_tablector(JanetFopts opts, Janet x, int op) {
+JanetSlot janetc_tablector(JanetFopts opts, Janet x, int op) {
     JanetCompiler *c = opts.compiler;
     return janetc_maker(opts,
                         janetc_toslotskv(c, x),
                         op);
 }
 
-static JanetSlot janetc_bufferctor(JanetFopts opts, Janet x) {
+JanetSlot janetc_bufferctor(JanetFopts opts, Janet x) {
     JanetCompiler *c = opts.compiler;
     JanetBuffer *b = janet_unwrap_buffer(x);
     Janet onearg = janet_stringv(b->data, b->count);
@@ -809,7 +809,7 @@ static JanetSlot janetc_bufferctor(JanetFopts opts, Janet x) {
 
 /* Expand a macro one time. Also get the special form compiler if we
  * find that instead. */
-static int macroexpand1(
+int janetc_macroexpand1(
     JanetCompiler *c,
     Janet x,
     Janet *out,
@@ -881,92 +881,6 @@ static int macroexpand1(
     }
 
     return 1;
-}
-
-/* Compile a single value */
-JanetSlot janetc_value(JanetFopts opts, Janet x) {
-    JanetSlot ret;
-    JanetCompiler *c = opts.compiler;
-    JanetSourceMapping last_mapping = c->current_mapping;
-    c->recursion_guard--;
-
-    /* Guard against previous errors and unbounded recursion */
-    if (c->result.status == JANET_COMPILE_ERROR) return janetc_cslot(janet_wrap_nil());
-    if (c->recursion_guard <= 0) {
-        janetc_cerror(c, "recursed too deeply");
-        return janetc_cslot(janet_wrap_nil());
-    }
-
-    /* Macro expand. Also gets possible special form and
-     * refines source mapping cursor if possible. */
-    const JanetSpecial *spec = NULL;
-    int macroi = JANET_MAX_MACRO_EXPAND;
-    while (macroi &&
-            c->result.status != JANET_COMPILE_ERROR &&
-            macroexpand1(c, x, &x, &spec))
-        macroi--;
-    if (macroi == 0) {
-        janetc_cerror(c, "recursed too deeply in macro expansion");
-        return janetc_cslot(janet_wrap_nil());
-    }
-
-    /* Special forms */
-    if (spec) {
-        const Janet *tup = janet_unwrap_tuple(x);
-        ret = spec->compile(opts, janet_tuple_length(tup) - 1, tup + 1);
-    } else {
-        switch (janet_type(x)) {
-            case JANET_TUPLE: {
-                JanetFopts subopts = janetc_fopts_default(c);
-                const Janet *tup = janet_unwrap_tuple(x);
-                /* Empty tuple is tuple literal */
-                if (janet_tuple_length(tup) == 0) {
-                    ret = janetc_cslot(janet_wrap_tuple(janet_tuple_n(NULL, 0)));
-                } else if (janet_tuple_flag(tup) & JANET_TUPLE_FLAG_BRACKETCTOR) { /* [] tuples are not function call */
-                    ret = janetc_tuple(opts, x);
-                } else {
-                    /* Function calls */
-                    JanetSlot head = janetc_value(subopts, tup[0]);
-                    subopts.flags = JANET_FUNCTION | JANET_CFUNCTION;
-                    ret = janetc_call(opts, janetc_toslots(c, tup + 1, janet_tuple_length(tup) - 1), head, tup);
-                    janetc_freeslot(c, head);
-                }
-                ret.flags &= ~JANET_SLOT_SPLICED;
-            }
-            break;
-            /* Data Constructors */
-            case JANET_SYMBOL:
-                ret = janetc_resolve(c, janet_unwrap_symbol(x));
-                break;
-            case JANET_ARRAY:
-                ret = janetc_array(opts, x);
-                break;
-            case JANET_STRUCT:
-                ret = janetc_tablector(opts, x, JOP_MAKE_STRUCT);
-                break;
-            case JANET_TABLE:
-                ret = janetc_tablector(opts, x, JOP_MAKE_TABLE);
-                break;
-            case JANET_BUFFER:
-                ret = janetc_bufferctor(opts, x);
-                break;
-            default:
-                ret = janetc_cslot(x);
-                break;
-        }
-    }
-
-    if (c->result.status == JANET_COMPILE_ERROR)
-        return janetc_cslot(janet_wrap_nil());
-    if (opts.flags & JANET_FOPTS_TAIL)
-        ret = janetc_return(c, ret);
-    if (opts.flags & JANET_FOPTS_HINT) {
-        janetc_copy(c, opts.hint, ret);
-        ret = opts.hint;
-    }
-    c->current_mapping = last_mapping;
-    c->recursion_guard++;
-    return ret;
 }
 
 /* Add function flags to janet functions */
