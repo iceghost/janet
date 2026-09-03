@@ -6,19 +6,19 @@ const Allocator = mem.Allocator;
 const x = @import("x");
 
 pub fn Thin(comptime T: type) type {
-    const alignment: mem.Alignment = .of([2]u32);
-    const alignment_size = alignment.toByteUnits();
-
     return extern struct {
         const Self = @This();
 
         /// This field is nullable until C vector.h is gone / fully owned by this struct
         base: ?[*]align(alignment_size) T,
 
+        const alignment: mem.Alignment = .of(Head);
+        const alignment_size = alignment.toByteUnits();
+
         pub const empty: Self = .{ .base = null };
 
         pub const Head = extern struct {
-            capacity: u32,
+            capacity: u32 align(8),
             count: u32,
 
             fn allocation(self: *Head) []align(alignment_size) u8 {

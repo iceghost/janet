@@ -9,6 +9,8 @@ const Compiler = @This();
 
 c: C,
 scope_root: C.Scope,
+/// Allocate objects that last for one compilation
+arena_per_compilation: std.heap.ArenaAllocator.State,
 
 pub const Error = mem.Allocator.Error || error{JanetCompileFail};
 
@@ -213,32 +215,34 @@ pub fn init(
     source: ?[*:0]const u8,
     lints: ?*janet.Array,
 ) void {
-    compiler.scope_root = undefined;
-    compiler.c = .{
-        .scope = null,
-        .buffer = .empty,
-        .mapbuffer = .empty,
-        .env = env,
-        .source = source,
-        .result = .{
-            .funcdef = null,
-            .@"error" = null,
-            .macrofiber = null,
-            .error_mapping = .{ .line = -1, .column = -1 },
-            .status = .ok,
+    compiler.* = .{
+        .arena_per_compilation = .init,
+        .scope_root = undefined,
+        .c = .{
+            .scope = null,
+            .buffer = .empty,
+            .mapbuffer = .empty,
+            .env = env,
+            .source = source,
+            .result = .{
+                .funcdef = null,
+                .@"error" = null,
+                .macrofiber = null,
+                .error_mapping = .{ .line = -1, .column = -1 },
+                .status = .ok,
+            },
+            .current_mapping = .{ .line = -1, .column = -1 },
+            .recursion_guard = 1024,
+            .lints = lints,
+            .is_redef = if (env.get_keyword("redef")) |v| @intFromBool(v.repr.truthy()) else 0,
         },
-        .current_mapping = .{ .line = -1, .column = -1 },
-        .recursion_guard = 1024,
-        .lints = lints,
-        .is_redef = if (env.get_keyword("redef")) |v| @intFromBool(v.repr.truthy()) else 0,
     };
 }
 
 pub fn deinit(compiler: *Compiler, rt: *janet.Runtime) void {
-    // TODO: use a compiler scratch allocator
-    _ = rt;
-
-    compiler.c.env = null;
+    var scratch = compiler.arena_per_compilation.promote(rt.gpa);
+    scratch.deinit();
+    compiler.* = undefined;
 }
 
 extern fn janet_sfree(memory: *anyopaque) callconv(.c) void;
@@ -252,8 +256,7 @@ extern fn janetc_array(options: C.Fopts, source: janet.Value) callconv(.c) C.Slo
 extern fn janetc_tuple(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
 extern fn janetc_tablector(options: C.Fopts, source: janet.Value, opcode: i32) callconv(.c) C.Slot;
 extern fn janetc_bufferctor(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
-extern fn janetc_call(options: C.Fopts, slots: ?[*]C.Slot, function: C.Slot, form: [*]const janet.Value) callconv(.c) C.Slot;
-extern fn janetc_toslots(compiler: *C, values: [*]const janet.Value, len: i32) callconv(.c) ?[*]C.Slot;
+extern fn janetc_call(options: C.Fopts, slots: x.array_list.Thin(C.Slot), function: C.Slot, form: [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_freeslot(compiler: *C, slot: C.Slot) callconv(.c) void;
 extern fn janetc_resolve(compiler: *C, symbol: [*:0]const u8) callconv(.c) C.Slot;
 extern fn janetc_return(compiler: *C, slot: C.Slot) callconv(.c) C.Slot;
@@ -261,7 +264,7 @@ extern fn janetc_copy(compiler: *C, destination: C.Slot, source: C.Slot) callcon
 extern fn janetc_cerror(compiler: *C, message: [*:0]const u8) callconv(.c) void;
 extern fn janetc_macroexpand1(compiler: *C, source: janet.Value, out: *janet.Value, special: *?*const C.Special) callconv(.c) c_int;
 
-pub fn compile(compiler: *Compiler, rt: *janet.Runtime, source: janet.Value) !C.Result {
+pub fn compile(compiler: *Compiler, rt: *janet.Runtime, source: janet.Value) mem.Allocator.Error!C.Result {
     janetc_scope(&compiler.scope_root, &compiler.c, .{ .function = true, .top = true }, "root");
 
     const flags: C.Fopts.Flags = .{
@@ -289,7 +292,7 @@ pub fn compile_value(
     hint: C.Slot,
     flags: C.Fopts.Flags,
     v: janet.Value,
-) !C.Slot {
+) mem.Allocator.Error!C.Slot {
     const last_mapping = compiler.c.current_mapping;
     compiler.c.recursion_guard -= 1;
 
@@ -336,12 +339,8 @@ pub fn compile_value(
                     .{},
                     values[0],
                 );
-                result = janetc_call(
-                    options,
-                    janetc_toslots(&compiler.c, values.ptr + 1, @intCast(values.len - 1)),
-                    function,
-                    values.ptr,
-                );
+                const arguments = try compiler.compile_value_many(rt, values[1..]);
+                result = janetc_call(options, arguments, function, values.ptr);
                 janetc_freeslot(&compiler.c, function);
             }
             result.flags.spliced = false;
@@ -363,6 +362,27 @@ pub fn compile_value(
     compiler.c.current_mapping = last_mapping;
     compiler.c.recursion_guard += 1;
     return result;
+}
+
+pub fn compile_value_many(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    values: []const janet.Value,
+) mem.Allocator.Error!x.array_list.Thin(C.Slot) {
+    var scratch = rt.arena_per_gc.promote(rt.gpa);
+    defer rt.arena_per_gc = scratch.state;
+
+    var slots: x.array_list.Thin(C.Slot) = .empty;
+    try slots.reserve_total_precise(scratch.allocator(), @intCast(values.len));
+    for (values) |v| {
+        slots.append(try compiler.compile_value(
+            rt,
+            .init_constant(.nil),
+            .{ .accept_splice = true },
+            v,
+        ));
+    }
+    return slots;
 }
 
 fn @"error"(compiler: *Compiler, str: *janet.value.String) Error {
