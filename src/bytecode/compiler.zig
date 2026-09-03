@@ -1,14 +1,16 @@
 const std = @import("std");
+const mem = std.mem;
 const janet = @import("janet");
 const Register = janet.compile.Register;
 const x = @import("x");
 
 const Compiler = @This();
 
+gpa: mem.Allocator,
 c: C,
 scope_root: C.Scope,
 
-pub const Error = error{JanetCompileFail};
+pub const Error = mem.Allocator.Error || error{JanetCompileFail};
 
 pub const Result = struct {
     def: *janet.value.FunctionDefinition,
@@ -189,6 +191,17 @@ pub const C = extern struct {
 
             return slot;
         }
+
+        pub fn init_far(c: *Compiler) Slot {
+            return .{
+                .flags = .{
+                    .type = .full,
+                },
+                .index = try c.allocfar(),
+                .constant = .nil,
+                .envindex = -1,
+            };
+        }
     };
 };
 
@@ -258,4 +271,22 @@ pub fn compile(compiler: *Compiler, rt: *janet.Runtime, source: janet.Value) C.R
     }
 
     return compiler.c.result;
+}
+
+fn @"error"(compiler: *Compiler, str: *janet.value.String) Error {
+    // don't override first error
+    if (compiler.c.result.status == .@"error") {
+        return error.JanetCompileFail;
+    }
+    compiler.c.result.status = .@"error";
+    compiler.c.result.@"error" = str.slice().ptr;
+    return error.JanetCompileFail;
+}
+
+fn allocfar(compiler: *Compiler) Error!Register {
+    const reg = try compiler.c.scope.?.ra.alloc(compiler.gpa);
+    if (@intFromEnum(reg) > 0xFFFF) {
+        return compiler.@"error"("ran out of internal registers");
+    }
+    return reg;
 }
