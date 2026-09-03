@@ -67,7 +67,7 @@ pub const Array = extern struct {
         const handle, const array = try create_deferred(rt);
         errdefer handle.destroy();
 
-        try array.ensure(rt, count, 1);
+        try array.reserve_growth(rt, count, 1);
 
         @memcpy(array.data[0..count], elements);
         array.count = count;
@@ -84,23 +84,37 @@ pub const Array = extern struct {
         self.gc = gc;
     }
 
-    pub fn ensure(self: *Array, rt: *janet.Runtime, requested: u32, growth: u32) Allocator.Error!void {
+    pub fn reserve(self: *Array, rt: *janet.Runtime, unused: usize) Allocator.Error!void {
+        return self.reserve_total(rt, try x.array_list.add_or_oom(self.count, unused));
+    }
+
+    pub fn reserve_total(self: *Array, rt: *janet.Runtime, total: u32) Allocator.Error!void {
+        if (total <= self.capacity) return;
+        return self.reserve_total_precise(rt, x.array_list.grow_capacity(Value, total));
+    }
+
+    pub fn reserve_total_precise(self: *Array, rt: *janet.Runtime, total: u32) Allocator.Error!void {
+        assert(total <= count_max);
+        const old_capacity = self.capacity;
+        const allocation = try rt.gpa.realloc(self.data[0..old_capacity], @intCast(total));
+
+        self.data = allocation.ptr;
+        self.capacity = @intCast(total);
+        janet.gc.pressure(rt, janet.Value, old_capacity, @intCast(total));
+    }
+
+    pub fn reserve_growth(self: *Array, rt: *janet.Runtime, requested: u32, growth: u32) Allocator.Error!void {
         if (requested <= self.capacity) return;
         assert(growth != 0);
 
-        const capacity = @as(u64, requested) * growth;
-        assert(capacity <= count_max);
-        const old_capacity = self.capacity;
-        const allocation = try rt.gpa.realloc(self.data[0..old_capacity], @intCast(capacity));
-
-        self.data = allocation.ptr;
-        self.capacity = @intCast(capacity);
-        janet.gc.pressure(rt, janet.Value, old_capacity, @intCast(capacity));
+        const capacity = requested *| growth;
+        if (capacity > count_max) return error.OutOfMemory;
+        return self.reserve_total_precise(rt, capacity);
     }
 
     pub fn set_count(self: *Array, rt: *janet.Runtime, count: u32) Allocator.Error!void {
         if (count > self.count) {
-            try self.ensure(rt, count, 1);
+            try self.reserve_growth(rt, count, 1);
             @memset(self.data[self.count..count], .nil);
         }
         self.count = count;
@@ -109,7 +123,7 @@ pub const Array = extern struct {
     pub fn push(self: *Array, rt: *janet.Runtime, value: janet.Value) Allocator.Error!void {
         assert(self.count < count_max);
         const new_count = self.count + 1;
-        try self.ensure(rt, new_count, 2);
+        try self.reserve_growth(rt, new_count, 2);
         self.data[self.count] = value;
         self.count = new_count;
     }

@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !u8 {
     const env = janet_core_env(null);
 
     const args: *janet.Array = try .create(rt);
-    try args.ensure(rt, @intCast(argv.len), 1);
+    try args.reserve(rt, argv.len);
     for (argv) |arg| {
         try args.push(rt, try .string(rt, arg));
     }

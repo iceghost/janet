@@ -25,7 +25,7 @@ fn create_weak(capacity: i32) callconv(.c) *janet.Array.Extern {
 fn create_typed(capacity: i32, object_type: janet.gc.ObjectType) !*janet.Array.Extern {
     const handle, const array = try janet.Array.create_deferred(.default());
     errdefer handle.destroy();
-    try array.ensure(.default(), @intCast(capacity), 1);
+    try array.reserve_growth(.default(), @intCast(capacity), 1);
     handle.finish(object_type);
     return .wrap(array);
 }
@@ -40,7 +40,7 @@ fn deinit(array_ext: *janet.Array.Extern) callconv(.c) void {
 }
 
 fn ensure(array_ext: *janet.Array.Extern, capacity: i32, growth: i32) callconv(.c) void {
-    array_ext.cast().ensure(.default(), @intCast(capacity), @intCast(growth)) catch janet.oom();
+    array_ext.cast().reserve_growth(.default(), @intCast(capacity), @intCast(growth)) catch janet.oom();
 }
 
 fn set_count(array_ext: *janet.Array.Extern, count: i32) callconv(.c) void {
