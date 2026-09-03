@@ -302,18 +302,167 @@ pub fn Integer(comptime size: u16) type {
     };
 }
 
-test Integer {
-    const BitSet = Integer(8);
-    const original = BitSet.empty.set(1).set(4);
-    const updated = original.unset(1).toggle(3);
+pub fn Enum(comptime E: type) type {
+    return packed struct(BitSet.MaskInt) {
+        const Self = @This();
 
-    try std.testing.expect(original.is_set(1));
-    try std.testing.expect(original.is_set(4));
-    try std.testing.expect(!original.is_set(3));
-    try std.testing.expect(!updated.is_set(1));
-    try std.testing.expect(updated.is_set(3));
-    try std.testing.expectEqual(@as(usize, 3), updated.find_first_set().?);
-    try std.testing.expectEqual(@as(usize, 4), updated.find_last_set().?);
-    try std.testing.expect(BitSet.empty.union_with(original).eql(original));
-    try std.testing.expect(updated.subset_of(updated.union_with(original)));
+        /// The indexing rules for converting between keys and indices.
+        pub const Indexer = std.enums.EnumIndexer(E);
+        /// The element type for this set.
+        pub const Key = Indexer.Key;
+
+        /// The maximum number of items in this set.
+        pub const len = Indexer.count;
+
+        const BitSet = Integer(Indexer.count);
+
+        bits: BitSet = .empty,
+
+        /// Initializes the set using a struct of bools
+        pub fn init(init_values: std.enums.EnumFieldStruct(E, bool, false)) Self {
+            @setEvalBranchQuota(2 * @typeInfo(E).@"enum".fields.len);
+            var result: Self = .{};
+            if (@typeInfo(E).@"enum".is_exhaustive) {
+                inline for (0..Self.len) |i| {
+                    const key = comptime Indexer.keyForIndex(i);
+                    const tag = @tagName(key);
+                    if (@field(init_values, tag)) {
+                        result.bits = result.bits.set(i);
+                    }
+                }
+            } else {
+                inline for (std.meta.fields(E)) |field| {
+                    const key = @field(E, field.name);
+                    if (@field(init_values, field.name)) {
+                        const i = comptime Indexer.indexOf(key);
+                        result.bits = result.bits.set(i);
+                    }
+                }
+            }
+            return result;
+        }
+
+        /// A set containing no keys.
+        pub const empty: Self = .{ .bits = .empty };
+
+        /// A set containing all possible keys.
+        pub const full: Self = .{ .bits = .full };
+
+        /// Returns a set containing multiple keys.
+        pub fn init_many(keys: []const Key) Self {
+            var s: Self = .empty;
+            for (keys) |key| s = s.set(key);
+            return s;
+        }
+
+        /// Returns a set containing a single key.
+        pub fn init_one(key: Key) Self {
+            return init_many(&[_]Key{key});
+        }
+
+        /// Returns the number of keys in the set.
+        pub fn count(self: Self) usize {
+            return self.bits.count();
+        }
+
+        /// Checks if a key is in the set.
+        pub fn contains(self: Self, key: Key) bool {
+            return self.bits.is_set(Indexer.indexOf(key));
+        }
+
+        /// Returns a new set with `key` present.
+        pub fn set(self: Self, key: Key) Self {
+            return .{ .bits = self.bits.set(Indexer.indexOf(key)) };
+        }
+
+        /// Returns a new set with `key` absent.
+        pub fn remove(self: Self, key: Key) Self {
+            return .{ .bits = self.bits.unset(Indexer.indexOf(key)) };
+        }
+
+        /// Returns a new set with `key`'s presence set to `present`.
+        pub fn set_present(self: Self, key: Key, present: bool) Self {
+            return .{ .bits = self.bits.set_value(Indexer.indexOf(key), present) };
+        }
+
+        /// Returns a new set with `key`'s presence toggled.
+        pub fn toggle(self: Self, key: Key) Self {
+            return .{ .bits = self.bits.toggle(Indexer.indexOf(key)) };
+        }
+
+        /// Returns a new set with keys in `other` toggled.
+        pub fn toggle_set(self: Self, other: Self) Self {
+            return .{ .bits = self.bits.toggle_set(other.bits) };
+        }
+
+        /// Returns a new set with all keys toggled.
+        pub fn toggle_all(self: Self) Self {
+            return .{ .bits = self.bits.toggle_all() };
+        }
+
+        /// Returns the union of two sets.
+        pub fn union_with(self: Self, other: Self) Self {
+            return .{ .bits = self.bits.union_with(other.bits) };
+        }
+
+        /// Returns the intersection of two sets.
+        pub fn intersect_with(self: Self, other: Self) Self {
+            return .{ .bits = self.bits.intersect_with(other.bits) };
+        }
+
+        /// Returns true iff both sets have the same keys.
+        pub fn eql(self: Self, other: Self) bool {
+            return self.bits.eql(other.bits);
+        }
+
+        /// Returns true iff all the keys in this set are
+        /// in the other set. The other set may have keys
+        /// not found in this set.
+        pub fn subset_of(self: Self, other: Self) bool {
+            return self.bits.subset_of(other.bits);
+        }
+
+        /// Returns true iff this set contains all the keys
+        /// in the other set. This set may have keys not
+        /// found in the other set.
+        pub fn superset_of(self: Self, other: Self) bool {
+            return self.bits.superset_of(other.bits);
+        }
+
+        /// Returns a set with all the keys not in this set.
+        pub fn complement(self: Self) Self {
+            return .{ .bits = self.bits.complement() };
+        }
+
+        /// Returns a set with keys that are in either this
+        /// set or the other set, but not both.
+        pub fn xor_with(self: Self, other: Self) Self {
+            return .{ .bits = self.bits.xor_with(other.bits) };
+        }
+
+        /// Returns a set with keys that are in this set
+        /// except for keys in the other set.
+        pub fn difference_with(self: Self, other: Self) Self {
+            return .{ .bits = self.bits.difference_with(other.bits) };
+        }
+
+        // /// Returns an iterator over this set, which iterates in
+        // /// index order.  Modifications to the set during iteration
+        // /// may or may not be observed by the iterator, but will
+        // /// not invalidate it.
+        // pub fn iterator(self: *const Self) Iterator {
+        //     return .{ .inner = self.bits.iterator(.{}) };
+        // }
+
+        // pub const Iterator = struct {
+        //     inner: BitSet.Iterator(.{}),
+
+        //     pub fn next(self: *Iterator) ?Key {
+        //         return if (self.inner.next()) |index|
+        //             Indexer.keyForIndex(index)
+        //         else
+        //             null;
+        //     }
+        // };
+    };
 }

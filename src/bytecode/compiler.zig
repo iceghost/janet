@@ -117,7 +117,7 @@ pub const C = extern struct {
         flags: Flags,
 
         pub const Flags = packed struct(u32) {
-            type: x.bit_set.Integer(16) = .empty,
+            type: x.bit_set.Enum(janet.Value.Tag) = .empty,
             tail: bool = false,
             hint: bool = false,
             drop: bool = false,
@@ -166,7 +166,7 @@ pub const C = extern struct {
         flags: Flags,
 
         pub const Flags = packed struct(u32) {
-            type: x.bit_set.Integer(16) = .empty,
+            type: x.bit_set.Enum(janet.Value.Tag) = .empty,
             constant: bool = false,
             named: bool = false,
             mutable: bool = false,
@@ -189,7 +189,7 @@ pub const C = extern struct {
                 .envindex = -1,
             };
 
-            slot.flags.type = slot.flags.type.set(@intFromEnum(v.repr.unwrap_tag()));
+            slot.flags.type = slot.flags.type.set(v.repr.unwrap_tag());
 
             return slot;
         }
@@ -332,7 +332,7 @@ pub fn compile_value(
             } else {
                 var subflags: C.Fopts.Flags = .{};
                 const function = try compiler.compile_value(rt, .init_constant(.nil), subflags, values[0]);
-                subflags.type = subflags.type.set(@intFromEnum(janet.Value.Tag.function)).set(@intFromEnum(janet.Value.Tag.cfunction));
+                subflags.type = subflags.type.set(.function).set(.cfunction);
                 result = janetc_call(
                     options,
                     janetc_toslots(&compiler.c, values.ptr + 1, @intCast(values.len - 1)),
