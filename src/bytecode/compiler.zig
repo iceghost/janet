@@ -263,6 +263,9 @@ extern fn janetc_return(compiler: *C, slot: C.Slot) callconv(.c) C.Slot;
 extern fn janetc_copy(compiler: *C, destination: C.Slot, source: C.Slot) callconv(.c) void;
 extern fn janetc_cerror(compiler: *C, message: [*:0]const u8) callconv(.c) void;
 extern fn janetc_macroexpand1(compiler: *C, source: janet.Value, out: *janet.Value, special: *?*const C.Special) callconv(.c) c_int;
+extern fn janetc_emit_s(compiler: *C, opcode: u8, slot: C.Slot, write: i32) callconv(.c) i32;
+extern fn janetc_emit_ss(compiler: *C, opcode: u8, lhs: C.Slot, rhs: C.Slot, write: i32) callconv(.c) i32;
+extern fn janetc_emit_sss(compiler: *C, opcode: u8, first: C.Slot, second: C.Slot, third: C.Slot, write: i32) callconv(.c) i32;
 
 pub fn compile(compiler: *Compiler, rt: *janet.Runtime, source: janet.Value) mem.Allocator.Error!C.Result {
     janetc_scope(&compiler.scope_root, &compiler.c, .{ .function = true, .top = true }, "root");
@@ -441,6 +444,59 @@ pub fn compile_value_many_kv(
         ));
     }
     return res;
+}
+
+pub fn emit_arguments(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    arena: mem.Allocator,
+    slots: []C.Slot,
+) struct {
+    spliced: bool,
+    min_arity: i32,
+} {
+    // TODO: break this function into a pure emitter, and one for calculating min_arity or spliced
+    _ = rt;
+    _ = arena;
+
+    var index: usize = 0;
+    var min_arity: i32 = 0;
+    var has_splice = false;
+    while (index < slots.len) {
+        if (slots[index].flags.spliced) {
+            _ = janetc_emit_s(&compiler.c, @intFromEnum(janet.bytecode.OpCode.push_array), slots[index], 0);
+            index += 1;
+            has_splice = true;
+        } else if (index + 1 == slots.len) {
+            _ = janetc_emit_s(&compiler.c, @intFromEnum(janet.bytecode.OpCode.push), slots[index], 0);
+            index += 1;
+            min_arity += 1;
+        } else if (slots[index + 1].flags.spliced) {
+            _ = janetc_emit_s(&compiler.c, @intFromEnum(janet.bytecode.OpCode.push), slots[index], 0);
+            _ = janetc_emit_s(&compiler.c, @intFromEnum(janet.bytecode.OpCode.push_array), slots[index + 1], 0);
+            index += 2;
+            min_arity += 1;
+            has_splice = true;
+        } else if (index + 2 == slots.len) {
+            _ = janetc_emit_ss(&compiler.c, @intFromEnum(janet.bytecode.OpCode.push_2), slots[index], slots[index + 1], 0);
+            index += 2;
+            min_arity += 2;
+        } else if (slots[index + 2].flags.spliced) {
+            _ = janetc_emit_ss(&compiler.c, @intFromEnum(janet.bytecode.OpCode.push_2), slots[index], slots[index + 1], 0);
+            _ = janetc_emit_s(&compiler.c, @intFromEnum(janet.bytecode.OpCode.push_array), slots[index + 2], 0);
+            index += 3;
+            min_arity += 2;
+            has_splice = true;
+        } else {
+            _ = janetc_emit_sss(&compiler.c, @intFromEnum(janet.bytecode.OpCode.push_3), slots[index], slots[index + 1], slots[index + 2], 0);
+            index += 3;
+            min_arity += 3;
+        }
+    }
+    return .{
+        .spliced = has_splice,
+        .min_arity = min_arity,
+    };
 }
 
 fn @"error"(compiler: *Compiler, str: *janet.value.String) Error {

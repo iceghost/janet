@@ -479,48 +479,6 @@ JanetSlot janetc_gettarget(JanetFopts opts) {
     return slot;
 }
 
-/* Push slots loaded via janetc_toslots. Return the minimum number of slots pushed,
- * or -1 - min_arity if there is a splice. (if there is no splice, min_arity is also
- * the maximum possible arity). */
-int32_t janetc_pushslots(JanetCompiler *c, JanetSlot *slots) {
-    int32_t i;
-    int32_t count = janet_v_count(slots);
-    int32_t min_arity = 0;
-    int has_splice = 0;
-    for (i = 0; i < count;) {
-        if (slots[i].flags & JANET_SLOT_SPLICED) {
-            janetc_emit_s(c, JOP_PUSH_ARRAY, slots[i], 0);
-            i++;
-            has_splice = 1;
-        } else if (i + 1 == count) {
-            janetc_emit_s(c, JOP_PUSH, slots[i], 0);
-            i++;
-            min_arity++;
-        } else if (slots[i + 1].flags & JANET_SLOT_SPLICED) {
-            janetc_emit_s(c, JOP_PUSH, slots[i], 0);
-            janetc_emit_s(c, JOP_PUSH_ARRAY, slots[i + 1], 0);
-            i += 2;
-            min_arity++;
-            has_splice = 1;
-        } else if (i + 2 == count) {
-            janetc_emit_ss(c, JOP_PUSH_2, slots[i], slots[i + 1], 0);
-            i += 2;
-            min_arity += 2;
-        } else if (slots[i + 2].flags & JANET_SLOT_SPLICED) {
-            janetc_emit_ss(c, JOP_PUSH_2, slots[i], slots[i + 1], 0);
-            janetc_emit_s(c, JOP_PUSH_ARRAY, slots[i + 2], 0);
-            i += 3;
-            min_arity += 2;
-            has_splice = 1;
-        } else {
-            janetc_emit_sss(c, JOP_PUSH_3, slots[i], slots[i + 1], slots[i + 2], 0);
-            i += 3;
-            min_arity += 3;
-        }
-    }
-    return has_splice ? (-1 - min_arity) : min_arity;
-}
-
 /* Check if a list of slots has any spliced slots */
 static int has_spliced(JanetSlot *slots) {
     int32_t i;

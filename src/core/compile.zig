@@ -9,6 +9,7 @@ comptime {
     @export(&value, .{ .name = "janetc_value" });
     @export(&toslots, .{ .name = "janetc_toslots" });
     @export(&toslotskv, .{ .name = "janetc_toslotskv" });
+    @export(&pushslots, .{ .name = "janetc_pushslots" });
 }
 
 fn default(
@@ -75,4 +76,16 @@ fn toslotskv(c: *Compiler.C, ds: janet.Value) callconv(.c) x.array_list.Thin(Com
     ) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
     };
+}
+
+fn pushslots(c: *Compiler.C, slots: x.array_list.Thin(Compiler.C.Slot)) callconv(.c) i32 {
+    const rt: *janet.Runtime = .default();
+    const compiler: *Compiler = @fieldParentPtr("c", c);
+
+    var scratch = compiler.arena_per_compilation.promote(rt.gpa);
+    defer compiler.arena_per_compilation = scratch.state;
+
+    var arguments = slots;
+    const res = compiler.emit_arguments(rt, scratch.allocator(), arguments.items());
+    return if (res.spliced) -1 - res.min_arity else res.min_arity;
 }
