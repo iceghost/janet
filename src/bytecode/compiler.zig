@@ -321,14 +321,17 @@ pub fn compile_value(
         flags: C.Fopts.Flags = .{},
     },
 ) mem.Allocator.Error!C.Slot {
-    const last_mapping = compiler.c.current_mapping;
-    compiler.c.recursion_guard -= 1;
-
     if (compiler.c.result.status == .@"error") return .init_constant(.nil);
+
+    const last_mapping = compiler.c.current_mapping;
+    defer compiler.c.current_mapping = last_mapping;
+
+    compiler.c.recursion_guard -= 1;
     if (compiler.c.recursion_guard <= 0) {
         janetc_cerror(&compiler.c, "recursed too deeply");
         return .init_constant(.nil);
     }
+    defer compiler.c.recursion_guard += 1;
 
     var source = v;
     var special: ?*const C.Special = null;
@@ -420,8 +423,6 @@ pub fn compile_value(
         janetc_copy(&compiler.c, options.hint, result);
         result = options.hint;
     }
-    compiler.c.current_mapping = last_mapping;
-    compiler.c.recursion_guard += 1;
     return result;
 }
 
