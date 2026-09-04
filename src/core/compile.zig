@@ -49,6 +49,7 @@ fn value(opts: Compiler.C.Fopts, v: janet.Value) callconv(.c) Compiler.C.Slot {
         .hint = opts.hint,
     }) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
+        error.CompileFailed => .init_constant(.nil),
     };
 }
 
@@ -63,6 +64,7 @@ fn toslots(
     defer compiler.arena_per_compilation = scratch.state;
     return compiler.compile_value_many(rt, scratch.allocator(), x.c_slice(values, len)) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
+        error.CompileFailed => .empty,
     };
 }
 
@@ -82,6 +84,7 @@ fn toslotskv(c: *Compiler.C, ds: janet.Value) callconv(.c) x.array_list.Thin(Com
         },
     ) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
+        error.CompileFailed => .empty,
     };
 }
 

@@ -162,5 +162,8 @@ pub fn compile(
     var scratch = compiler.arena_per_compilation.promote(rt.gpa);
     defer compiler.arena_per_compilation = scratch.state;
 
-    return try compiler.compile(rt, scratch.allocator(), source);
+    return compiler.compile(rt, scratch.allocator(), source) catch |err| switch (err) {
+        error.OutOfMemory => |e| return e,
+        error.CompileFailed => return compiler.c.result,
+    };
 }

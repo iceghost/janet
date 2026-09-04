@@ -8,6 +8,8 @@ const x = @import("x");
 
 const Compiler = @This();
 
+const Error = mem.Allocator.Error || error{CompileFailed};
+
 c: C,
 scope_root: C.Scope,
 /// Allocate objects that last for one compilation
@@ -276,7 +278,7 @@ fn get_target(
     rt: *janet.Runtime,
     hint: C.Slot,
     flags: C.Fopts.Flags,
-) mem.Allocator.Error!C.Slot {
+) Error!C.Slot {
     if (flags.hint and hint.envindex < 0 and hint.index >= 0 and hint.index <= 0xFF) return hint;
     return .{
         .constant = .nil,
@@ -291,7 +293,7 @@ pub fn compile(
     rt: *janet.Runtime,
     arena: mem.Allocator,
     source: janet.Value,
-) mem.Allocator.Error!C.Result {
+) Error!C.Result {
     janetc_scope(&compiler.scope_root, &compiler.c, .{ .function = true, .top = true }, "root");
 
     _ = try compiler.compile_value(rt, arena, source, .{
@@ -320,17 +322,14 @@ pub fn compile_value(
         hint: C.Slot = .init_constant(.nil),
         flags: C.Fopts.Flags = .{},
     },
-) mem.Allocator.Error!C.Slot {
-    if (compiler.c.result.status == .@"error") return .init_constant(.nil);
+) Error!C.Slot {
+    if (compiler.c.result.status == .@"error") return error.CompileFailed;
 
     const last_mapping = compiler.c.current_mapping;
     defer compiler.c.current_mapping = last_mapping;
 
     compiler.c.recursion_guard -= 1;
-    if (compiler.c.recursion_guard <= 0) {
-        janetc_cerror(&compiler.c, "recursed too deeply");
-        return .init_constant(.nil);
-    }
+    if (compiler.c.recursion_guard <= 0) return compiler.fail("recursed too deeply");
     defer compiler.c.recursion_guard += 1;
 
     var source = v;
@@ -340,10 +339,7 @@ pub fn compile_value(
         compiler.c.result.status != .@"error" and
         janetc_macroexpand1(&compiler.c, source, &source, &special) != 0) : (macro_expansions -= 1)
     {}
-    if (macro_expansions == 0) {
-        janetc_cerror(&compiler.c, "recursed too deeply in macro expansion");
-        return .init_constant(.nil);
-    }
+    if (macro_expansions == 0) return compiler.fail("recursed too deeply in macro expansion");
 
     const fopts: C.Fopts = .{
         .compiler = &compiler.c,
@@ -417,7 +413,7 @@ pub fn compile_value(
         else => result = .init_constant(source),
     }
 
-    if (compiler.c.result.status == .@"error") return .init_constant(.nil);
+    if (compiler.c.result.status == .@"error") return error.CompileFailed;
     if (options.flags.tail) result = janetc_return(&compiler.c, result);
     if (options.flags.hint) {
         janetc_copy(&compiler.c, options.hint, result);
@@ -431,7 +427,7 @@ pub fn compile_value_many(
     rt: *janet.Runtime,
     arena: mem.Allocator,
     values: []const janet.Value,
-) mem.Allocator.Error!x.array_list.Thin(C.Slot) {
+) Error!x.array_list.Thin(C.Slot) {
     var slots: x.array_list.Thin(C.Slot) = .empty;
     try slots.reserve_total_precise(arena, @intCast(values.len));
     for (values) |v| {
@@ -547,11 +543,15 @@ pub fn emit_arguments(
     };
 }
 
-fn allocfar(compiler: *Compiler, rt: *janet.Runtime) mem.Allocator.Error!Register {
+fn allocfar(compiler: *Compiler, rt: *janet.Runtime) Error!Register {
     // need to use gpa until C client is fully gone
     const reg = try compiler.c.scope.?.ra.alloc(rt.gpa);
-    if (@intFromEnum(reg) > 0xFFFF) {
-        janetc_cerror(&compiler.c, "ran out of internal registers");
-    }
+    if (@intFromEnum(reg) > 0xFFFF) return compiler.fail("ran out of internal registers");
+
     return reg;
+}
+
+fn fail(compiler: *Compiler, comptime s: [:0]const u8) error{CompileFailed} {
+    janetc_cerror(&compiler.c, s.ptr);
+    return error.CompileFailed;
 }
