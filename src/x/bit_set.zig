@@ -2,6 +2,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
+const x = @import("x");
+
 /// A bit set with runtime-known size, backed by an allocated slice of usize.
 ///
 /// This is different from `std.bit_set.Dynamic` in that the storage layout are different
@@ -54,7 +56,10 @@ pub const Dynamic = extern struct {
         if (new_mask_count > self.masks_capacity) {
             const new_capacity = @max(new_mask_count, @max(self.masks_capacity * 2, 2));
             const masks = if (self.masks_capacity > 0)
-                try allocator.realloc(self.masks[0..self.masks_capacity], new_capacity)
+                try x.array_list.realloc(allocator, self.masks[0..self.masks_capacity], .{
+                    .count = old_mask_count,
+                    .total_new = new_capacity,
+                })
             else
                 try allocator.alloc(MaskInt, new_capacity);
             self.masks = masks.ptr;

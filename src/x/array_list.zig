@@ -66,15 +66,10 @@ pub fn Thin(comptime T: type) type {
 
             const new_size = @sizeOf(Head) + @as(usize, total) * @sizeOf(T);
             const old_memory = h.allocation();
-            const new_memory = if (gpa.remap(old_memory, new_size)) |memory|
-                memory
-            else blk: {
-                const memory = try gpa.alignedAlloc(u8, alignment, new_size);
-                const used_size = @sizeOf(Head) + @as(usize, h.count) * @sizeOf(T);
-                @memcpy(memory[0..used_size], old_memory[0..used_size]);
-                gpa.free(old_memory);
-                break :blk memory;
-            };
+            const new_memory = try realloc(gpa, old_memory, .{
+                .count = @sizeOf(Head) + @as(usize, h.count) * @sizeOf(T),
+                .total_new = new_size,
+            });
 
             const new_head, const elems = x.mem_chop_head(new_memory, Head);
             new_head.capacity = total;
@@ -129,20 +124,17 @@ test "Thin reserves exact capacity and preserves items" {
     try std.testing.expectEqual(10, list.pop());
 }
 
+/// Does not support allocator. Implement your own allocating/resize functions
+/// in the containing data structure.
 pub fn Fat(comptime T: type) type {
     return extern struct {
         const Self = @This();
 
-        ptr: [*]T,
         len: u32,
         capacity: u32,
+        ptr: [*]T,
 
         pub const empty: Self = .{ .ptr = &.{}, .len = 0, .capacity = 0 };
-
-        pub fn deinit(self: *Self, gpa: Allocator) void {
-            gpa.free(self.ptr[0..self.capacity]);
-            self.* = undefined;
-        }
 
         pub fn slice(self: *Self) []const T {
             return self.ptr[0..self.len];
@@ -152,6 +144,12 @@ pub fn Fat(comptime T: type) type {
             assert(self.len < self.capacity);
             self.ptr[self.len] = item;
             self.len += 1;
+        }
+
+        pub fn pop(self: *Self) T {
+            assert(self.len > 0);
+            self.len -= 1;
+            return self.ptr[self.len];
         }
 
         pub fn add_many_as_array(self: *Self, comptime n: usize) *[n]T {
@@ -170,6 +168,7 @@ test "Fat adds many as array" {
     list.add_many_as_array(3).* = .{ 10, 20, 30 };
 
     try std.testing.expectEqualSlices(u32, &.{ 10, 20, 30 }, list.slice());
+    try std.testing.expectEqual(30, list.pop());
 }
 
 /// Returns a capacity larger than minimum that grows super-linearly.
@@ -186,4 +185,41 @@ pub fn add_or_oom(num: u32, increment: usize) Allocator.Error!u32 {
         return error.OutOfMemory;
     }
     return @intCast(result);
+}
+
+/// `Allocator.realloc` but optimized for array list with known initialized items.
+///
+/// This will avoid unnecessary copying uninitialized bytes.
+pub fn realloc(gpa: Allocator, allocation: anytype, options: struct {
+    count: usize,
+    total_new: usize,
+}) Allocator.Error!@TypeOf(allocation) {
+    assert(options.count <= allocation.len);
+    assert(allocation.len <= options.total_new);
+
+    if (gpa.remap(allocation, options.total_new)) |allocation_new| {
+        @branchHint(.likely);
+        return allocation_new;
+    }
+
+    const slice_info = @typeInfo(@TypeOf(allocation)).pointer;
+    comptime assert(slice_info.size == .slice);
+    const T = slice_info.child;
+    const alignment = comptime mem.Alignment.fromByteUnits(slice_info.alignment orelse @alignOf(T));
+    const allocation_new = try gpa.alignedAlloc(T, alignment, options.total_new);
+    @memcpy(allocation_new[0..options.count], allocation[0..options.count]);
+    gpa.free(allocation);
+    return allocation_new;
+}
+
+test realloc {
+    const gpa = std.testing.allocator;
+    var allocation = try gpa.alloc(u32, 4);
+    allocation[0..2].* = .{ 10, 20 };
+
+    allocation = try realloc(gpa, allocation, .{ .count = 2, .total_new = 8 });
+    defer gpa.free(allocation);
+
+    try std.testing.expectEqual(8, allocation.len);
+    try std.testing.expectEqualSlices(u32, &.{ 10, 20 }, allocation[0..2]);
 }
