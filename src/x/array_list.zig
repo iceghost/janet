@@ -146,6 +146,12 @@ pub fn Fat(comptime T: type) type {
             self.len += 1;
         }
 
+        pub fn append_slice(self: *Self, items: []const T) void {
+            assert(items.len <= self.capacity - self.len);
+            @memcpy(self.ptr[self.len..][0..items.len], items);
+            self.len += @intCast(items.len);
+        }
+
         pub fn pop(self: *Self) T {
             assert(self.len > 0);
             self.len -= 1;
@@ -169,6 +175,16 @@ test "Fat adds many as array" {
 
     try std.testing.expectEqualSlices(u32, &.{ 10, 20, 30 }, list.slice());
     try std.testing.expectEqual(30, list.pop());
+}
+
+test "Fat appends a slice" {
+    var storage: [3]u32 = undefined;
+    var list: Fat(u32) = .{ .ptr = &storage, .len = 0, .capacity = storage.len };
+
+    list.append(10);
+    list.append_slice(&.{ 20, 30 });
+
+    try std.testing.expectEqualSlices(u32, &.{ 10, 20, 30 }, list.slice());
 }
 
 /// Returns a capacity larger than minimum that grows super-linearly.

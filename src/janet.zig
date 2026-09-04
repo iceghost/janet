@@ -11,6 +11,7 @@ pub const gc = @import("gc.zig");
 pub const Runtime = @import("runtime.zig");
 pub const value = @import("value.zig");
 pub const Array = value.Array;
+pub const Buffer = value.Buffer;
 pub const Value = value.Box;
 pub const Tuple = value.Tuple;
 
@@ -27,6 +28,7 @@ comptime {
     _ = bytecode;
     _ = @import("include/janet.zig");
     _ = @import("core/array.zig");
+    _ = @import("core/buffer.zig");
     _ = @import("core/compile.zig");
     _ = @import("core/fiber.zig");
     _ = @import("core/pp.zig");

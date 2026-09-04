@@ -354,6 +354,38 @@ pub const Buffer = extern struct {
 
     pub const count_max = std.math.maxInt(i32);
 
+    pub const Flags = packed struct(u16) {
+        no_realloc: bool,
+        unused: u15 = 0,
+    };
+
+    /// Same as `Buffer`, but with potentially negative counts and null data.
+    pub const Extern = extern struct {
+        gc: janet.gc.Object,
+        count: i32,
+        capacity: i32,
+        data: ?[*]u8,
+
+        pub fn cast(self: *Extern) *Buffer {
+            assert(self.count >= 0);
+            assert(self.capacity >= 0);
+            assert(self.data != null);
+            return @ptrCast(self);
+        }
+
+        pub fn wrap(buffer: *Buffer) *Extern {
+            return @ptrCast(buffer);
+        }
+    };
+
+    pub fn create(rt: *janet.Runtime, capacity: u32) Allocator.Error!*Buffer {
+        const handle, const buffer, _ = try janet.gc.create_deferred(rt, Buffer, u8, 0);
+        errdefer handle.destroy();
+        buffer.* = try init(rt, capacity);
+        handle.finish(.buffer);
+        return buffer;
+    }
+
     pub fn init(rt: *janet.Runtime, capacity: u32) Allocator.Error!Buffer {
         const actual_capacity = @max(capacity, 4);
         const data = try janet.gc.alloc(rt, u8, actual_capacity);
@@ -370,7 +402,9 @@ pub const Buffer = extern struct {
     pub fn deinit(self: *Buffer, rt: *janet.Runtime) void {
         const data: *align(janet.gc.alignment_size) anyopaque = @ptrCast(@alignCast(self.bytes.ptr));
         janet.gc.free(rt, data);
+        const gc = self.gc;
         self.* = .empty;
+        self.gc = gc;
     }
 
     pub fn reserve(self: *Buffer, rt: *janet.Runtime, unused: usize) Allocator.Error!void {
@@ -388,6 +422,37 @@ pub const Buffer = extern struct {
         const allocation = try janet.gc.realloc(rt, u8, old, total);
         self.bytes.ptr = allocation.ptr;
         self.bytes.capacity = total;
+    }
+
+    pub fn reserve_growth(self: *Buffer, rt: *janet.Runtime, requested: u32, growth: u32) Allocator.Error!void {
+        if (requested <= self.bytes.capacity) return;
+        assert(growth != 0);
+
+        const capacity = requested *| growth;
+        if (capacity > count_max) return error.OutOfMemory;
+        return self.reserve_total_precise(rt, capacity);
+    }
+
+    pub fn set_count(self: *Buffer, rt: *janet.Runtime, count: u32) Allocator.Error!void {
+        if (count > self.bytes.len) {
+            try self.reserve_growth(rt, count, 1);
+            @memset(self.bytes.ptr[self.bytes.len..count], 0);
+        }
+        self.bytes.len = count;
+    }
+
+    pub fn append_slice(self: *Buffer, rt: *janet.Runtime, bytes: []const u8) Allocator.Error!void {
+        if (bytes.len == 0) return;
+        const count = try x.array_list.add_or_oom(self.bytes.len, bytes.len);
+        if (count > count_max) return error.OutOfMemory;
+        try self.reserve_growth(rt, count, 2);
+        self.bytes.append_slice(bytes);
+    }
+
+    pub fn append(self: *Buffer, rt: *janet.Runtime, byte: u8) Allocator.Error!void {
+        if (self.bytes.len == count_max) return error.OutOfMemory;
+        try self.reserve_growth(rt, self.bytes.len + 1, 2);
+        self.bytes.append(byte);
     }
 
     pub fn slice(self: *Buffer) []u8 {
