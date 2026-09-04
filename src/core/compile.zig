@@ -49,7 +49,7 @@ fn value(opts: Compiler.C.Fopts, v: janet.Value) callconv(.c) Compiler.C.Slot {
         .hint = opts.hint,
     }) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
-        error.CompileFailed => .init_constant(.nil),
+        error.CompileFailed => .constant(.nil),
     };
 }
 

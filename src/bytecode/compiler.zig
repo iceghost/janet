@@ -132,7 +132,7 @@ pub const C = extern struct {
             return .{
                 .compiler = &compiler.c,
                 .flags = .{},
-                .hint = .init_constant(.nil),
+                .hint = .constant(.nil),
             };
         }
     };
@@ -162,7 +162,7 @@ pub const C = extern struct {
     /// A stack slot.
     pub const Slot = extern struct {
         /// The slot's constant value, when `flags.constant` is set.
-        constant: janet.Value,
+        value: janet.Value,
         index: i32,
         /// Zero for a local slot, or a positive number for an upvalue.
         envindex: i32,
@@ -182,13 +182,13 @@ pub const C = extern struct {
             reserved: u7 = 0,
         };
 
-        pub fn init_constant(v: janet.Value) Slot {
+        pub fn constant(v: janet.Value) Slot {
             var slot: Slot = .{
                 .flags = .{
                     .constant = true,
                 },
                 .index = -1,
-                .constant = v,
+                .value = v,
                 .envindex = -1,
             };
 
@@ -197,13 +197,13 @@ pub const C = extern struct {
             return slot;
         }
 
-        pub fn init_far(c: *Compiler) mem.Allocator.Error!Slot {
+        pub fn allocfar(c: *Compiler) mem.Allocator.Error!Slot {
             return .{
                 .flags = .{
                     .type = .full,
                 },
                 .index = @bitCast(@intFromEnum(try c.allocfar())),
-                .constant = .nil,
+                .value = .nil,
                 .envindex = -1,
             };
         }
@@ -281,7 +281,7 @@ fn get_target(
 ) Error!C.Slot {
     if (flags.hint and hint.envindex < 0 and hint.index >= 0 and hint.index <= 0xFF) return hint;
     return .{
-        .constant = .nil,
+        .value = .nil,
         .index = @bitCast(@intFromEnum(try compiler.allocfar(rt))),
         .envindex = -1,
         .flags = .{},
@@ -319,7 +319,7 @@ pub fn compile_value(
     arena: mem.Allocator,
     v: janet.Value,
     options: struct {
-        hint: C.Slot = .init_constant(.nil),
+        hint: C.Slot = .constant(.nil),
         flags: C.Fopts.Flags = .{},
     },
 ) Error!C.Slot {
@@ -356,7 +356,7 @@ pub fn compile_value(
             const tuple = source.unwrap().tuple;
             const values = tuple.slice();
             if (values.len == 0) {
-                result = .init_constant(.tuple(try .from_slice(rt, &.{})));
+                result = .constant(.tuple(try .from_slice(rt, &.{})));
             } else if ((@as(u32, @bitCast(tuple.gc.flags)) & 0x10000) != 0) {
                 result = janetc_tuple(fopts, source);
             } else {
@@ -393,9 +393,9 @@ pub fn compile_value(
                 const ds: *janet.value.Struct = try .begin(rt, @intCast(slots.items().len / 2));
                 var i: usize = 0;
                 while (i < slots.items().len) : (i += 2) {
-                    ds.put(slots.items()[i].constant, slots.items()[i + 1].constant, true);
+                    ds.put(slots.items()[i].value, slots.items()[i + 1].value, true);
                 }
-                result = .init_constant(.@"struct"(try ds.end(rt)));
+                result = .constant(.@"struct"(try ds.end(rt)));
             } else {
                 _ = compiler.emit_arguments(rt, arena, slots.items());
 
@@ -410,7 +410,7 @@ pub fn compile_value(
         },
         .array => result = janetc_array(fopts, source),
         .buffer => result = janetc_bufferctor(fopts, source),
-        else => result = .init_constant(source),
+        else => result = .constant(source),
     }
 
     if (compiler.c.result.status == .@"error") return error.CompileFailed;
