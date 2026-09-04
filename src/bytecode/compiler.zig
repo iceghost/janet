@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const mem = std.mem;
 
 const janet = @import("janet");
@@ -11,8 +12,6 @@ c: C,
 scope_root: C.Scope,
 /// Allocate objects that last for one compilation
 arena_per_compilation: std.heap.ArenaAllocator.State,
-
-pub const Error = mem.Allocator.Error || error{JanetCompileFail};
 
 pub const Result = struct {
     def: *janet.value.FunctionDefinition,
@@ -196,15 +195,21 @@ pub const C = extern struct {
             return slot;
         }
 
-        pub fn init_far(c: *Compiler) Error!Slot {
+        pub fn init_far(c: *Compiler) mem.Allocator.Error!Slot {
             return .{
                 .flags = .{
                     .type = .full,
                 },
-                .index = try c.allocfar(),
+                .index = @bitCast(@intFromEnum(try c.allocfar())),
                 .constant = .nil,
                 .envindex = -1,
             };
+        }
+
+        pub fn free(slot: Slot, c: *Compiler) void {
+            if (slot.flags.constant or slot.flags.ref or slot.flags.named) return;
+            if (slot.envindex >= 0) return;
+            c.c.scope.?.ra.free(@enumFromInt(@as(u32, @bitCast(slot.index))));
         }
     };
 };
@@ -254,7 +259,6 @@ extern fn janetc_popscope(compiler: *C) callconv(.c) void;
 extern fn janetc_pop_funcdef(compiler: *C) callconv(.c) *janet.value.FunctionDefinition;
 extern fn janetc_array(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
 extern fn janetc_tuple(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
-extern fn janetc_tablector(options: C.Fopts, source: janet.Value, opcode: i32) callconv(.c) C.Slot;
 extern fn janetc_bufferctor(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
 extern fn janetc_call(options: C.Fopts, slots: x.array_list.Thin(C.Slot), function: C.Slot, form: [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_freeslot(compiler: *C, slot: C.Slot) callconv(.c) void;
@@ -267,14 +271,35 @@ extern fn janetc_emit_s(compiler: *C, opcode: u8, slot: C.Slot, write: i32) call
 extern fn janetc_emit_ss(compiler: *C, opcode: u8, lhs: C.Slot, rhs: C.Slot, write: i32) callconv(.c) i32;
 extern fn janetc_emit_sss(compiler: *C, opcode: u8, first: C.Slot, second: C.Slot, third: C.Slot, write: i32) callconv(.c) i32;
 
-pub fn compile(compiler: *Compiler, rt: *janet.Runtime, source: janet.Value) mem.Allocator.Error!C.Result {
+fn get_target(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    hint: C.Slot,
+    flags: C.Fopts.Flags,
+) mem.Allocator.Error!C.Slot {
+    if (flags.hint and hint.envindex < 0 and hint.index >= 0 and hint.index <= 0xFF) return hint;
+    return .{
+        .constant = .nil,
+        .index = @bitCast(@intFromEnum(try compiler.allocfar(rt))),
+        .envindex = -1,
+        .flags = .{},
+    };
+}
+
+pub fn compile(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    arena: mem.Allocator,
+    source: janet.Value,
+) mem.Allocator.Error!C.Result {
     janetc_scope(&compiler.scope_root, &compiler.c, .{ .function = true, .top = true }, "root");
 
     const flags: C.Fopts.Flags = .{
         .type = .full,
         .tail = true,
     };
-    _ = try compiler.compile_value(rt, .init_constant(.nil), flags, source);
+
+    _ = try compiler.compile_value(rt, arena, .init_constant(.nil), flags, source);
 
     if (compiler.c.result.status == .ok) {
         const def = janetc_pop_funcdef(&compiler.c);
@@ -292,6 +317,7 @@ pub fn compile(compiler: *Compiler, rt: *janet.Runtime, source: janet.Value) mem
 pub fn compile_value(
     compiler: *Compiler,
     rt: *janet.Runtime,
+    arena: mem.Allocator,
     hint: C.Slot,
     flags: C.Fopts.Flags,
     v: janet.Value,
@@ -336,22 +362,55 @@ pub fn compile_value(
             } else if ((@as(u32, @bitCast(tuple.gc.flags)) & 0x10000) != 0) {
                 result = janetc_tuple(options, source);
             } else {
-                const function = try compiler.compile_value(
-                    rt,
-                    .init_constant(.nil),
-                    .{},
-                    values[0],
-                );
-                const arguments = try compiler.compile_value_many(rt, values[1..]);
+                const function = try compiler.compile_value(rt, arena, .init_constant(.nil), .{}, values[0]);
+                defer janetc_freeslot(&compiler.c, function);
+
+                const arguments = try compiler.compile_value_many(rt, arena, values[1..]);
                 result = janetc_call(options, arguments, function, values.ptr);
-                janetc_freeslot(&compiler.c, function);
             }
             result.flags.spliced = false;
         },
         .symbol => result = janetc_resolve(&compiler.c, source.unwrap().string.slice().ptr),
+
+        inline .table, .@"struct" => |t| {
+            const slots = try compiler.compile_value_many_kv(rt, arena, switch (t) {
+                .@"struct" => .from_struct(source.unwrap().@"struct"),
+                .table => .from_table(source.unwrap().table),
+                else => comptime unreachable,
+            });
+            defer for (slots.items()) |s| s.free(compiler);
+
+            const can_inline = switch (t) {
+                .table => false,
+                .@"struct" => for (slots.items()) |slot| {
+                    if (!slot.flags.constant or slot.flags.spliced) break false;
+                } else blk: {
+                    break :blk true;
+                },
+                else => comptime unreachable,
+            };
+
+            if (can_inline) {
+                assert(t == .@"struct");
+                const ds: *janet.value.Struct = try .begin(rt, @intCast(slots.items().len / 2));
+                var i: usize = 0;
+                while (i < slots.items().len) : (i += 2) {
+                    ds.put(slots.items()[i].constant, slots.items()[i + 1].constant, true);
+                }
+                result = .init_constant(.@"struct"(try ds.end(rt)));
+            } else {
+                _ = compiler.emit_arguments(rt, arena, slots.items());
+
+                result = try get_target(compiler, rt, hint, flags);
+
+                _ = janetc_emit_s(&compiler.c, @intFromEnum(switch (t) {
+                    .table => janet.bytecode.OpCode.make_table,
+                    .@"struct" => janet.bytecode.OpCode.make_struct,
+                    else => comptime unreachable,
+                }), result, 1);
+            }
+        },
         .array => result = janetc_array(options, source),
-        .@"struct" => result = janetc_tablector(options, source, @intFromEnum(janet.bytecode.OpCode.make_struct)),
-        .table => result = janetc_tablector(options, source, @intFromEnum(janet.bytecode.OpCode.make_table)),
         .buffer => result = janetc_bufferctor(options, source),
         else => result = .init_constant(source),
     }
@@ -370,16 +429,15 @@ pub fn compile_value(
 pub fn compile_value_many(
     compiler: *Compiler,
     rt: *janet.Runtime,
+    arena: mem.Allocator,
     values: []const janet.Value,
 ) mem.Allocator.Error!x.array_list.Thin(C.Slot) {
-    var scratch = rt.arena_per_gc.promote(rt.gpa);
-    defer rt.arena_per_gc = scratch.state;
-
     var slots: x.array_list.Thin(C.Slot) = .empty;
-    try slots.reserve_total_precise(scratch.allocator(), @intCast(values.len));
+    try slots.reserve_total_precise(arena, @intCast(values.len));
     for (values) |v| {
         slots.append(try compiler.compile_value(
             rt,
+            arena,
             .init_constant(.nil),
             .{ .accept_splice = true },
             v,
@@ -432,12 +490,14 @@ pub fn compile_value_many_kv(
     for (indices) |i| {
         res.append(try compiler.compile_value(
             rt,
+            arena,
             .init_constant(.nil),
             .{ .accept_splice = true },
             view.ptr[i].key,
         ));
         res.append(try compiler.compile_value(
             rt,
+            arena,
             .init_constant(.nil),
             .{ .accept_splice = true },
             view.ptr[i].val,
@@ -499,20 +559,11 @@ pub fn emit_arguments(
     };
 }
 
-fn @"error"(compiler: *Compiler, str: *janet.value.String) Error {
-    // don't override first error
-    if (compiler.c.result.status == .@"error") {
-        return error.JanetCompileFail;
-    }
-    compiler.c.result.status = .@"error";
-    compiler.c.result.@"error" = str.slice().ptr;
-    return error.JanetCompileFail;
-}
-
-fn allocfar(compiler: *Compiler) Error!Register {
-    const reg = try compiler.c.scope.?.ra.alloc(compiler.gpa);
+fn allocfar(compiler: *Compiler, rt: *janet.Runtime) mem.Allocator.Error!Register {
+    // need to use gpa until C client is fully gone
+    const reg = try compiler.c.scope.?.ra.alloc(rt.gpa);
     if (@intFromEnum(reg) > 0xFFFF) {
-        return compiler.@"error"("ran out of internal registers");
+        janetc_cerror(&compiler.c, "ran out of internal registers");
     }
     return reg;
 }

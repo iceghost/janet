@@ -709,13 +709,6 @@ JanetSlot janetc_tuple(JanetFopts opts, Janet x) {
                         JOP_MAKE_TUPLE);
 }
 
-JanetSlot janetc_tablector(JanetFopts opts, Janet x, int op) {
-    JanetCompiler *c = opts.compiler;
-    return janetc_maker(opts,
-                        janetc_toslotskv(c, x),
-                        op);
-}
-
 JanetSlot janetc_bufferctor(JanetFopts opts, Janet x) {
     JanetCompiler *c = opts.compiler;
     JanetBuffer *b = janet_unwrap_buffer(x);

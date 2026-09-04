@@ -38,7 +38,7 @@ pub fn Thin(comptime T: type) type {
             return x.mem_recover_head(Head, self.base.?);
         }
 
-        pub fn items(self: *Self) []align(alignment_size) T {
+        pub fn items(self: Self) []align(alignment_size) T {
             if (self.base) |b| {
                 const h = self.head();
                 return b[0..h.count];

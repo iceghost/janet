@@ -42,7 +42,9 @@ fn fopts_default(c: *Compiler.C) callconv(.c) Compiler.C.Fopts {
 fn value(opts: Compiler.C.Fopts, v: janet.Value) callconv(.c) Compiler.C.Slot {
     const rt: *janet.Runtime = .default();
     const compiler: *Compiler = @fieldParentPtr("c", opts.compiler);
-    return compiler.compile_value(rt, opts.hint, opts.flags, v) catch |err| switch (err) {
+    var scratch = compiler.arena_per_compilation.promote(rt.gpa);
+    defer compiler.arena_per_compilation = scratch.state;
+    return compiler.compile_value(rt, scratch.allocator(), opts.hint, opts.flags, v) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
     };
 }
@@ -54,7 +56,9 @@ fn toslots(
 ) callconv(.c) x.array_list.Thin(Compiler.C.Slot) {
     const rt: *janet.Runtime = .default();
     const compiler: *Compiler = @fieldParentPtr("c", c);
-    return compiler.compile_value_many(rt, x.c_slice(values, len)) catch |err| switch (err) {
+    var scratch = compiler.arena_per_compilation.promote(rt.gpa);
+    defer compiler.arena_per_compilation = scratch.state;
+    return compiler.compile_value_many(rt, scratch.allocator(), x.c_slice(values, len)) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
     };
 }

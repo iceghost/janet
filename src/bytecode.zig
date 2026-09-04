@@ -159,5 +159,8 @@ pub fn compile(
     compiler.init(env, where, lints);
     defer compiler.deinit(rt);
 
-    return try compiler.compile(rt, source);
+    var scratch = compiler.arena_per_compilation.promote(rt.gpa);
+    defer compiler.arena_per_compilation = scratch.state;
+
+    return try compiler.compile(rt, scratch.allocator(), source);
 }

@@ -84,6 +84,10 @@ pub const Array = extern struct {
         self.gc = gc;
     }
 
+    pub fn slice(self: *const Array) []Value {
+        return self.data[0..self.count];
+    }
+
     pub fn reserve(self: *Array, rt: *janet.Runtime, unused: usize) Allocator.Error!void {
         return self.reserve_total(rt, try x.array_list.add_or_oom(self.count, unused));
     }
