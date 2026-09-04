@@ -294,12 +294,9 @@ pub fn compile(
 ) mem.Allocator.Error!C.Result {
     janetc_scope(&compiler.scope_root, &compiler.c, .{ .function = true, .top = true }, "root");
 
-    const flags: C.Fopts.Flags = .{
-        .type = .full,
-        .tail = true,
-    };
-
-    _ = try compiler.compile_value(rt, arena, .init_constant(.nil), flags, source);
+    _ = try compiler.compile_value(rt, arena, source, .{
+        .flags = .{ .type = .full, .tail = true },
+    });
 
     if (compiler.c.result.status == .ok) {
         const def = janetc_pop_funcdef(&compiler.c);
@@ -318,9 +315,11 @@ pub fn compile_value(
     compiler: *Compiler,
     rt: *janet.Runtime,
     arena: mem.Allocator,
-    hint: C.Slot,
-    flags: C.Fopts.Flags,
     v: janet.Value,
+    options: struct {
+        hint: C.Slot = .init_constant(.nil),
+        flags: C.Fopts.Flags = .{},
+    },
 ) mem.Allocator.Error!C.Slot {
     const last_mapping = compiler.c.current_mapping;
     compiler.c.recursion_guard -= 1;
@@ -343,16 +342,16 @@ pub fn compile_value(
         return .init_constant(.nil);
     }
 
-    const options: C.Fopts = .{
+    const fopts: C.Fopts = .{
         .compiler = &compiler.c,
-        .hint = hint,
-        .flags = flags,
+        .hint = options.hint,
+        .flags = options.flags,
     };
     var result: C.Slot = undefined;
     if (special) |s| {
         const tuple = source.unwrap().tuple;
         const values = tuple.slice();
-        result = s.compile(options, @intCast(values.len - 1), values.ptr + 1);
+        result = s.compile(fopts, @intCast(values.len - 1), values.ptr + 1);
     } else switch (source.repr.unwrap_tag()) {
         .tuple => {
             const tuple = source.unwrap().tuple;
@@ -360,13 +359,13 @@ pub fn compile_value(
             if (values.len == 0) {
                 result = .init_constant(.tuple(try .from_slice(rt, &.{})));
             } else if ((@as(u32, @bitCast(tuple.gc.flags)) & 0x10000) != 0) {
-                result = janetc_tuple(options, source);
+                result = janetc_tuple(fopts, source);
             } else {
-                const function = try compiler.compile_value(rt, arena, .init_constant(.nil), .{}, values[0]);
+                const function = try compiler.compile_value(rt, arena, values[0], .{});
                 defer janetc_freeslot(&compiler.c, function);
 
                 const arguments = try compiler.compile_value_many(rt, arena, values[1..]);
-                result = janetc_call(options, arguments, function, values.ptr);
+                result = janetc_call(fopts, arguments, function, values.ptr);
             }
             result.flags.spliced = false;
         },
@@ -401,7 +400,7 @@ pub fn compile_value(
             } else {
                 _ = compiler.emit_arguments(rt, arena, slots.items());
 
-                result = try get_target(compiler, rt, hint, flags);
+                result = try get_target(compiler, rt, options.hint, options.flags);
 
                 _ = janetc_emit_s(&compiler.c, @intFromEnum(switch (t) {
                     .table => janet.bytecode.OpCode.make_table,
@@ -410,16 +409,16 @@ pub fn compile_value(
                 }), result, 1);
             }
         },
-        .array => result = janetc_array(options, source),
-        .buffer => result = janetc_bufferctor(options, source),
+        .array => result = janetc_array(fopts, source),
+        .buffer => result = janetc_bufferctor(fopts, source),
         else => result = .init_constant(source),
     }
 
     if (compiler.c.result.status == .@"error") return .init_constant(.nil);
-    if (flags.tail) result = janetc_return(&compiler.c, result);
-    if (flags.hint) {
-        janetc_copy(&compiler.c, hint, result);
-        result = hint;
+    if (options.flags.tail) result = janetc_return(&compiler.c, result);
+    if (options.flags.hint) {
+        janetc_copy(&compiler.c, options.hint, result);
+        result = options.hint;
     }
     compiler.c.current_mapping = last_mapping;
     compiler.c.recursion_guard += 1;
@@ -435,13 +434,9 @@ pub fn compile_value_many(
     var slots: x.array_list.Thin(C.Slot) = .empty;
     try slots.reserve_total_precise(arena, @intCast(values.len));
     for (values) |v| {
-        slots.append(try compiler.compile_value(
-            rt,
-            arena,
-            .init_constant(.nil),
-            .{ .accept_splice = true },
-            v,
-        ));
+        slots.append(try compiler.compile_value(rt, arena, v, .{
+            .flags = .{ .accept_splice = true },
+        }));
     }
 
     return slots;
@@ -488,20 +483,12 @@ pub fn compile_value_many_kv(
     var res: x.array_list.Thin(C.Slot) = .empty;
     try res.reserve_total_precise(arena, @intCast(2 * indices.len));
     for (indices) |i| {
-        res.append(try compiler.compile_value(
-            rt,
-            arena,
-            .init_constant(.nil),
-            .{ .accept_splice = true },
-            view.ptr[i].key,
-        ));
-        res.append(try compiler.compile_value(
-            rt,
-            arena,
-            .init_constant(.nil),
-            .{ .accept_splice = true },
-            view.ptr[i].val,
-        ));
+        res.append(try compiler.compile_value(rt, arena, view.ptr[i].key, .{
+            .flags = .{ .accept_splice = true },
+        }));
+        res.append(try compiler.compile_value(rt, arena, view.ptr[i].val, .{
+            .flags = .{ .accept_splice = true },
+        }));
     }
     return res;
 }

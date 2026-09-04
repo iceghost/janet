@@ -44,7 +44,10 @@ fn value(opts: Compiler.C.Fopts, v: janet.Value) callconv(.c) Compiler.C.Slot {
     const compiler: *Compiler = @fieldParentPtr("c", opts.compiler);
     var scratch = compiler.arena_per_compilation.promote(rt.gpa);
     defer compiler.arena_per_compilation = scratch.state;
-    return compiler.compile_value(rt, scratch.allocator(), opts.hint, opts.flags, v) catch |err| switch (err) {
+    return compiler.compile_value(rt, scratch.allocator(), v, .{
+        .flags = opts.flags,
+        .hint = opts.hint,
+    }) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
     };
 }
