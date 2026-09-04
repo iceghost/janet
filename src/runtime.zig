@@ -83,6 +83,10 @@ pub const Signal = enum(c_int) {
     event,
 };
 
+pub const Error = Allocator.Error || error{
+    JanetPanic,
+};
+
 extern fn janet_signalv(sig: Signal, v: janet.Value) callconv(.c) noreturn;
 pub fn signal(rt: *Runtime, sig: Signal, v: janet.Value) noreturn {
     _ = rt;

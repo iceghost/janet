@@ -29,6 +29,7 @@ comptime {
     _ = @import("core/array.zig");
     _ = @import("core/compile.zig");
     _ = @import("core/fiber.zig");
+    _ = @import("core/pp.zig");
     _ = @import("core/regalloc.zig");
     _ = @import("core/state.zig");
     _ = @import("core/string.zig");

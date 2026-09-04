@@ -340,36 +340,6 @@ void janet_description_b(JanetBuffer *buffer, Janet x) {
     janet_to_string_b(buffer, x);
 }
 
-const uint8_t *janet_description(Janet x) {
-    JanetBuffer b;
-    janet_buffer_init(&b, 10);
-    janet_description_b(&b, x);
-    const uint8_t *ret = janet_string(b.data, b.count);
-    janet_buffer_deinit(&b);
-    return ret;
-}
-
-/* Convert any value to a janet string. Similar to description, but
- * strings, symbols, and buffers will return their content. */
-const uint8_t *janet_to_string(Janet x) {
-    switch (janet_type(x)) {
-        default: {
-            JanetBuffer b;
-            janet_buffer_init(&b, 10);
-            janet_to_string_b(&b, x);
-            const uint8_t *ret = janet_string(b.data, b.count);
-            janet_buffer_deinit(&b);
-            return ret;
-        }
-        case JANET_BUFFER:
-            return janet_string(janet_unwrap_buffer(x)->data, janet_unwrap_buffer(x)->count);
-        case JANET_STRING:
-        case JANET_SYMBOL:
-        case JANET_KEYWORD:
-            return janet_unwrap_string(x);
-    }
-}
-
 /* Hold state for pretty printer. */
 struct pretty {
     JanetBuffer *buffer;
@@ -1095,38 +1065,6 @@ void janet_formatbv(JanetBuffer *b, const char *format, va_list args) {
         }
 
     }
-}
-
-/* Helper function for formatting strings. Useful for generating error messages and the like.
- * Similar to printf, but specialized for operating with janet. */
-const uint8_t *janet_formatc(const char *format, ...) {
-    va_list args;
-    const uint8_t *ret;
-    JanetBuffer buffer;
-    int32_t len = 0;
-
-    /* Calculate length, init buffer and args */
-    while (format[len]) len++;
-    janet_buffer_init(&buffer, len);
-    va_start(args, format);
-
-    /* Run format */
-    janet_formatbv(&buffer, format, args);
-
-    /* Iterate length */
-    va_end(args);
-
-    ret = janet_string(buffer.data, buffer.count);
-    janet_buffer_deinit(&buffer);
-    return ret;
-}
-
-JanetBuffer *janet_formatb(JanetBuffer *buffer, const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    janet_formatbv(buffer, format, args);
-    va_end(args);
-    return buffer;
 }
 
 /* Shared implementation between string/format and

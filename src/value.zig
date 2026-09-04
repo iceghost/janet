@@ -6,9 +6,8 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 
 const janet = @import("janet");
-const x = @import("x");
-
 const Value = janet.Value;
+const x = @import("x");
 
 pub const CFunction = *const fn (argc: i32, argv: [*]Value) callconv(.c) Value;
 
@@ -196,6 +195,7 @@ pub const Box = extern struct {
         number: f64,
         string: *String,
         array: *Array,
+        buffer: *Buffer,
         table: *Table,
         tuple: *Tuple,
         @"struct": *Struct,
@@ -208,6 +208,7 @@ pub const Box = extern struct {
                 return .{ .string = p.cast_head() };
             },
             .array => .{ .array = @ptrFromInt(v.repr.pointer_bits()) },
+            .buffer => .{ .buffer = @ptrFromInt(v.repr.pointer_bits()) },
             .table => .{ .table = @ptrFromInt(v.repr.pointer_bits()) },
             .tuple => {
                 const p: Tuple.Extern.Pointer = .{ .ptr = @ptrFromInt(v.repr.pointer_bits()) };
@@ -353,7 +354,7 @@ pub const Buffer = extern struct {
     capacity: u32,
     data: [*]u8,
 
-    pub const empty: Array = .{
+    pub const empty: Buffer = .{
         .gc = .disabled,
         .count = 0,
         .capacity = 0,
@@ -361,6 +362,27 @@ pub const Buffer = extern struct {
     };
 
     pub const count_max = std.math.maxInt(i32);
+
+    pub fn init(rt: *janet.Runtime, capacity: u32) Allocator.Error!Buffer {
+        const actual_capacity = @max(capacity, 4);
+        const data = try janet.gc.alloc(rt, u8, actual_capacity);
+        return .{
+            .gc = .disabled,
+            .count = 0,
+            .capacity = actual_capacity,
+            .data = data.ptr,
+        };
+    }
+
+    pub fn deinit(self: *Buffer, rt: *janet.Runtime) void {
+        const data: *align(janet.gc.alignment_size) anyopaque = @ptrCast(@alignCast(self.data));
+        janet.gc.free(rt, data);
+        self.* = .empty;
+    }
+
+    pub fn slice(self: *Buffer) []u8 {
+        return self.data[0..self.count];
+    }
 };
 
 pub const String = extern struct {
@@ -1895,3 +1917,47 @@ pub const Fiber = extern struct {
         };
     };
 };
+
+// TODO: port those later than compiler and vm
+extern fn janet_formatbv(b: *Buffer, fmt: [*:0]const u8, std.builtin.VaList) void;
+extern fn janet_jdn(b: ?*Buffer, depth: c_int, v: Value) *Buffer;
+extern fn janet_description_b(b: *Buffer, v: Value) void;
+extern fn janet_to_string_b(b: *Buffer, v: Value) void;
+
+pub fn printf(rt: *janet.Runtime, b: *Buffer, fmt: [:0]const u8, ...) janet.Runtime.Error!void {
+    var args = @cVaStart();
+    defer @cVaEnd(&args);
+    return vprintf(rt, b, fmt, args);
+}
+
+pub fn vprintf(rt: *janet.Runtime, b: *Buffer, fmt: [:0]const u8, args: std.builtin.VaList) janet.Runtime.Error!void {
+    // not implemented yet, but at least we know:
+    // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
+    _ = rt;
+    janet_formatbv(b, fmt.ptr, args);
+}
+
+pub fn print_jdn(rt: *janet.Runtime, b: *Buffer, v: Value, options: struct {
+    depth: u32 = 1024,
+}) janet.Runtime.Error!void {
+    // not implemented yet, but at least we know:
+    // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
+    _ = rt;
+    // in Zig we require user create the buffer, so ignore return value
+    const ret = janet_jdn(b, @intCast(options.depth), v);
+    assert(ret == b);
+}
+
+pub fn print_description(rt: *janet.Runtime, b: *Buffer, v: Value) janet.Runtime.Error!void {
+    // not implemented yet, but at least we know:
+    // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
+    _ = rt;
+    janet_description_b(b, v);
+}
+
+pub fn print(rt: *janet.Runtime, b: *Buffer, v: Value) janet.Runtime.Error!void {
+    // not implemented yet, but at least we know:
+    // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
+    _ = rt;
+    janet_to_string_b(b, v);
+}
