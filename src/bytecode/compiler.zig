@@ -277,10 +277,8 @@ extern fn janetc_do(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_fn(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_if(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_quasiquote(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
-extern fn janetc_quote(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_varset(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_splice(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
-extern fn janetc_unquote(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_upscope(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_var(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_while(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
@@ -414,16 +412,16 @@ pub fn compile_value(
         const args: [*]const janet.Value = values.ptr + 1;
         const argc: i32 = @intCast(values.len - 1);
         result = switch (s) {
+            .quote => return do_quote(compiler, values[1..]),
+            .unquote => return do_unquote(compiler, values[1..]),
             .@"break" => janetc_break(fopts, argc, args),
             .def => janetc_def(fopts, argc, args),
             .do => janetc_do(fopts, argc, args),
             .@"fn" => janetc_fn(fopts, argc, args),
             .@"if" => janetc_if(fopts, argc, args),
             .quasiquote => janetc_quasiquote(fopts, argc, args),
-            .quote => janetc_quote(fopts, argc, args),
             .set => janetc_varset(fopts, argc, args),
             .splice => janetc_splice(fopts, argc, args),
-            .unquote => janetc_unquote(fopts, argc, args),
             .upscope => janetc_upscope(fopts, argc, args),
             .@"var" => janetc_var(fopts, argc, args),
             .@"while" => janetc_while(fopts, argc, args),
@@ -695,4 +693,13 @@ fn fail_printf(
     const message = @call(.auto, janet_formatc, .{format.ptr} ++ args);
     janetc_error(&compiler.c, message);
     return error.CompileFailed;
+}
+
+fn do_quote(compiler: *Compiler, args: []const janet.Value) error{CompileFailed}!C.Slot {
+    if (args.len != 1) return compiler.fail("expected 1 argument to quote");
+    return .constant(args[0]);
+}
+
+fn do_unquote(compiler: *Compiler, _: []const janet.Value) error{CompileFailed}!C.Slot {
+    return compiler.fail("cannot use unquote here");
 }

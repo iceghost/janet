@@ -53,14 +53,6 @@ static void check_24bit_jump(JanetCompiler *c, int32_t lab1, int32_t lab2) {
     }
 }
 
-JanetSlot janetc_quote(JanetFopts opts, int32_t argn, const Janet *argv) {
-    if (argn != 1) {
-        janetc_cerror(opts.compiler, "expected 1 argument to quote");
-        return janetc_cslot(janet_wrap_nil());
-    }
-    return janetc_cslot(argv[0]);
-}
-
 JanetSlot janetc_splice(JanetFopts opts, int32_t argn, const Janet *argv) {
     JanetSlot ret;
     if (!(opts.flags & JANET_FOPTS_ACCEPT_SPLICE)) {
@@ -151,13 +143,6 @@ JanetSlot janetc_quasiquote(JanetFopts opts, int32_t argn, const Janet *argv) {
         return janetc_cslot(janet_wrap_nil());
     }
     return quasiquote(opts, argv[0], opts.compiler->recursion_guard, 0);
-}
-
-JanetSlot janetc_unquote(JanetFopts opts, int32_t argn, const Janet *argv) {
-    (void) argn;
-    (void) argv;
-    janetc_cerror(opts.compiler, "cannot use unquote here");
-    return janetc_cslot(janet_wrap_nil());
 }
 
 /* Perform destructuring. Be careful to
