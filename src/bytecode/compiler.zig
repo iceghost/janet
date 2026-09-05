@@ -348,15 +348,17 @@ const SpecialForm = enum {
     });
 };
 
+pub const CompileOptions = struct {
+    hint: C.Slot = .constant(.nil),
+    flags: C.Fopts.Flags = .{},
+};
+
 pub fn compile_value(
     compiler: *Compiler,
     rt: *janet.Runtime,
     arena: mem.Allocator,
     v: janet.Value,
-    options: struct {
-        hint: C.Slot = .constant(.nil),
-        flags: C.Fopts.Flags = .{},
-    },
+    options: CompileOptions,
 ) Error!C.Slot {
     if (compiler.c.result.status == .@"error") return error.CompileFailed;
 
@@ -412,8 +414,9 @@ pub fn compile_value(
         const args: [*]const janet.Value = values.ptr + 1;
         const argc: i32 = @intCast(values.len - 1);
         result = switch (s) {
-            .quote => return do_quote(compiler, values[1..]),
-            .unquote => return do_unquote(compiler, values[1..]),
+            .quote => try compiler.do_quote(values[1..]),
+            .unquote => return compiler.fail_unquote(),
+            .splice => try compiler.do_splice(rt, arena, values[1..], options),
             .@"break" => janetc_break(fopts, argc, args),
             .def => janetc_def(fopts, argc, args),
             .do => janetc_do(fopts, argc, args),
@@ -421,7 +424,6 @@ pub fn compile_value(
             .@"if" => janetc_if(fopts, argc, args),
             .quasiquote => janetc_quasiquote(fopts, argc, args),
             .set => janetc_varset(fopts, argc, args),
-            .splice => janetc_splice(fopts, argc, args),
             .upscope => janetc_upscope(fopts, argc, args),
             .@"var" => janetc_var(fopts, argc, args),
             .@"while" => janetc_while(fopts, argc, args),
@@ -700,6 +702,23 @@ fn do_quote(compiler: *Compiler, args: []const janet.Value) error{CompileFailed}
     return .constant(args[0]);
 }
 
-fn do_unquote(compiler: *Compiler, _: []const janet.Value) error{CompileFailed}!C.Slot {
+fn fail_unquote(compiler: *Compiler) error{CompileFailed} {
     return compiler.fail("cannot use unquote here");
+}
+
+fn do_splice(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    arena: mem.Allocator,
+    args: []const janet.Value,
+    options: CompileOptions,
+) !C.Slot {
+    if (!options.flags.accept_splice) {
+        return compiler.fail("splice can only be used in function arguments and data constructors");
+    }
+    if (args.len != 1) return compiler.fail("expected 1 argument to splice");
+
+    var res = try compiler.compile_value(rt, arena, args[0], options);
+    res.flags.spliced = true;
+    return res;
 }

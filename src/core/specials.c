@@ -53,21 +53,6 @@ static void check_24bit_jump(JanetCompiler *c, int32_t lab1, int32_t lab2) {
     }
 }
 
-JanetSlot janetc_splice(JanetFopts opts, int32_t argn, const Janet *argv) {
-    JanetSlot ret;
-    if (!(opts.flags & JANET_FOPTS_ACCEPT_SPLICE)) {
-        janetc_cerror(opts.compiler, "splice can only be used in function parameters and data constructors, it has no effect here");
-        return janetc_cslot(janet_wrap_nil());
-    }
-    if (argn != 1) {
-        janetc_cerror(opts.compiler, "expected 1 argument to splice");
-        return janetc_cslot(janet_wrap_nil());
-    }
-    ret = janetc_value(opts, argv[0]);
-    ret.flags |= JANET_SLOT_SPLICED;
-    return ret;
-}
-
 static JanetSlot qq_slots(JanetFopts opts, JanetSlot *slots, int makeop) {
     JanetSlot target = janetc_gettarget(opts);
     janetc_pushslots(opts.compiler, slots);
