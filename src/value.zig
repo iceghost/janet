@@ -1473,6 +1473,11 @@ pub const Tuple = extern struct {
 
     pub const count_max = std.math.maxInt(i32);
 
+    const Flags = packed struct(u16) {
+        bracketed: bool,
+        unused: u15 = 0,
+    };
+
     pub const Extern = extern struct {
         gc: janet.gc.Object,
         count: i32,
@@ -1522,6 +1527,10 @@ pub const Tuple = extern struct {
         @memcpy(tuple.slice_assume_wip(), values);
         tuple.end();
         return tuple;
+    }
+
+    pub fn is_bracketed(self: *Tuple) bool {
+        return self.gc.flags_typed(Flags).bracketed;
     }
 
     fn allocation(tuple: *Tuple) []align(janet.gc.alignment_size) u8 {

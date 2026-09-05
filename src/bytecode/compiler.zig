@@ -361,7 +361,7 @@ pub fn compile_value(
             const values = tuple.slice();
             if (values.len == 0) {
                 result = .constant(.tuple(try .from_slice(rt, &.{})));
-            } else if ((@as(u32, @bitCast(tuple.gc.flags)) & 0x10000) != 0) {
+            } else if (tuple.is_bracketed()) {
                 result = janetc_tuple(fopts, source);
             } else {
                 const function = try compiler.compile_value(rt, arena, values[0], .{});
@@ -446,7 +446,7 @@ fn macroexpand1(
         };
     }
 
-    if (form.gc.flags.payload & 1 != 0 or !values[0].checktype(.symbol)) return false;
+    if (form.is_bracketed() or !values[0].checktype(.symbol)) return false;
     const name = values[0].unwrap().string;
     if (janetc_special(@ptrCast(name.slice().ptr))) |s| {
         special.* = s;
