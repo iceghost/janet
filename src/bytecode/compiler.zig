@@ -843,3 +843,28 @@ fn do_do(
 
     return result;
 }
+
+fn do_if(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    arena: mem.Allocator,
+    args: []const janet.Value,
+    options: CompileOptions,
+) Error!C.Slot {
+    _ = arena; // autofix
+    if (args.len < 2 or args.len > 3) {
+        return compiler.fail("expected 2 or 3 arguments to if");
+    }
+
+    const target: C.Slot = if (options.flags.drop or options.flags.tail)
+        .constant(.nil)
+    else
+        compiler.get_target(rt, options.hint);
+
+    _ = target; // autofix
+
+    {
+        var scope_condition: C.Scope = undefined;
+        janetc_scope(&scope_condition, &compiler.c, .{}, "do");
+    }
+}
