@@ -141,32 +141,6 @@ JanetSlot janetc_farslot(JanetCompiler *c) {
     return ret;
 }
 
-/* Enter a new scope */
-void janetc_scope(JanetScope *s, JanetCompiler *c, int flags, const char *name) {
-    JanetScope scope;
-    scope.name = name;
-    scope.child = NULL;
-    scope.consts = NULL;
-    scope.syms = NULL;
-    scope.envs = NULL;
-    scope.defs = NULL;
-    scope.bytecode_start = janet_v_count(c->buffer);
-    scope.flags = flags;
-    scope.parent = c->scope;
-    janetc_regalloc_init(&scope.ua);
-    /* Inherit slots */
-    if ((!(flags & JANET_SCOPE_FUNCTION)) && c->scope) {
-        janetc_regalloc_clone(&scope.ra, &(c->scope->ra));
-    } else {
-        janetc_regalloc_init(&scope.ra);
-    }
-    /* Link parent and child and update pointer */
-    if (c->scope)
-        c->scope->child = s;
-    c->scope = s;
-    *s = scope;
-}
-
 static int lookup_missing(
     JanetCompiler *c,
     const uint8_t *sym,

@@ -260,7 +260,6 @@ extern fn janet_sfree(memory: *anyopaque) callconv(.c) void;
 extern fn janet_cstring(cstring: [*:0]const u8) callconv(.c) [*:0]const u8;
 extern fn janet_tuple_n(values: ?[*]const janet.Value, count: i32) callconv(.c) [*]const janet.Value;
 extern fn janet_def_addflags(def: *janet.value.FunctionDefinition) callconv(.c) void;
-extern fn janetc_scope(scope: *C.Scope, compiler: *C, flags: C.Scope.Flags, name: [*:0]const u8) callconv(.c) void;
 extern fn janetc_pop_funcdef(compiler: *C) callconv(.c) *janet.value.FunctionDefinition;
 extern fn janetc_array(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
 extern fn janetc_tuple(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
@@ -315,7 +314,7 @@ pub fn compile(
     arena: mem.Allocator,
     source: janet.Value,
 ) Error!C.Result {
-    janetc_scope(&compiler.scope_root, &compiler.c, .{ .function = true, .top = true }, "root");
+    try compiler.push_scope_root();
 
     _ = try compiler.compile_value(rt, arena, source, .{
         .flags = .{ .type = .full, .tail = true },
@@ -693,6 +692,55 @@ fn allocfar(compiler: *Compiler, rt: *janet.Runtime) Error!Register {
     return reg;
 }
 
+pub fn push_scope_root(compiler: *Compiler) mem.Allocator.Error!void {
+    assert(compiler.c.scope == null);
+    compiler.scope_root = .{
+        .name = "root",
+        .parent = null,
+        .child = null,
+        .consts = .empty,
+        .syms = .empty,
+        .defs = .empty,
+        .ra = .empty,
+        .ua = .empty,
+        .envs = .empty,
+        .bytecode_start = 0,
+        .flags = .{
+            .function = true,
+            .top = true,
+        },
+    };
+    compiler.c.scope = &compiler.scope_root;
+}
+
+pub fn push_scope(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    scope: *C.Scope,
+    name: [:0]const u8,
+    flags: C.Scope.Flags,
+) mem.Allocator.Error!void {
+    const scope_current = compiler.c.scope.?;
+    scope.* = .{
+        .name = name,
+        .parent = scope_current,
+        .child = null,
+        .consts = .empty,
+        .syms = .empty,
+        .defs = .empty,
+        .ra = if (flags.function)
+            .empty
+        else
+            try scope_current.ra.clone(rt.gpa),
+        .ua = .empty,
+        .envs = .empty,
+        .bytecode_start = @intCast(compiler.c.buffer.items().len),
+        .flags = flags,
+    };
+    scope_current.child = scope;
+    compiler.c.scope = scope;
+}
+
 pub fn pop_scope(compiler: *Compiler, rt: *janet.Runtime) mem.Allocator.Error!void {
     var arena_per_gc = rt.arena_per_gc.promote(rt.gpa);
     defer rt.arena_per_gc = arena_per_gc.state;
@@ -813,7 +861,7 @@ fn do_do(
     options: CompileOptions,
 ) Error!C.Slot {
     var scope: C.Scope = undefined;
-    janetc_scope(&scope, &compiler.c, .{}, "do");
+    try compiler.push_scope(rt, &scope, "do", .{});
 
     if (args.len > 1) {
         for (args[0 .. args.len - 1]) |arg| {
@@ -865,6 +913,6 @@ fn do_if(
 
     {
         var scope_condition: C.Scope = undefined;
-        janetc_scope(&scope_condition, &compiler.c, .{}, "do");
+        try compiler.push_scope(rt, &scope_condition, "if-cond", .{});
     }
 }

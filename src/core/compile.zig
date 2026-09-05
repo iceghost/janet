@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const janet = @import("janet");
 const Compiler = janet.bytecode.Compiler;
 const x = @import("x");
@@ -10,6 +12,7 @@ comptime {
     @export(&toslots, .{ .name = "janetc_toslots" });
     @export(&toslotskv, .{ .name = "janetc_toslotskv" });
     @export(&pushslots, .{ .name = "janetc_pushslots" });
+    @export(&scope, .{ .name = "janetc_scope" });
     @export(&popscope, .{ .name = "janetc_popscope" });
 }
 
@@ -99,6 +102,12 @@ fn pushslots(c: *Compiler.C, slots: x.array_list.Thin(Compiler.C.Slot)) callconv
     var arguments = slots;
     const res = compiler.emit_arguments(rt, scratch.allocator(), arguments.items());
     return if (res.spliced) -1 - res.min_arity else res.min_arity;
+}
+
+fn scope(s: *Compiler.C.Scope, c: *Compiler.C, flags: Compiler.C.Scope.Flags, name: [*:0]const u8) callconv(.c) void {
+    const rt: *janet.Runtime = .default();
+    const compiler: *Compiler = @fieldParentPtr("c", c);
+    compiler.push_scope(rt, s, std.mem.span(name), flags) catch rt.oom();
 }
 
 fn popscope(c: *Compiler.C) callconv(.c) void {
