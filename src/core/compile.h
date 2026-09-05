@@ -232,7 +232,6 @@ JanetSlot janetc_quote(JanetFopts opts, int32_t argn, const Janet *argv);
 JanetSlot janetc_varset(JanetFopts opts, int32_t argn, const Janet *argv);
 JanetSlot janetc_splice(JanetFopts opts, int32_t argn, const Janet *argv);
 JanetSlot janetc_unquote(JanetFopts opts, int32_t argn, const Janet *argv);
-JanetSlot janetc_upscope(JanetFopts opts, int32_t argn, const Janet *argv);
 JanetSlot janetc_var(JanetFopts opts, int32_t argn, const Janet *argv);
 JanetSlot janetc_while(JanetFopts opts, int32_t argn, const Janet *argv);
 

@@ -283,7 +283,6 @@ extern fn janetc_if(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_quasiquote(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_varset(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_splice(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
-extern fn janetc_upscope(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_var(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_while(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 
@@ -421,14 +420,14 @@ pub fn compile_value(
             .quote => try compiler.do_quote(values[1..]),
             .unquote => return compiler.fail_unquote(),
             .splice => try compiler.do_splice(rt, arena, values[1..], options),
+            .do => try compiler.do_do(rt, arena, values[1..], options),
+            .upscope => try compiler.do_upscope(rt, arena, values[1..], options),
             .@"break" => janetc_break(fopts, argc, args),
             .def => janetc_def(fopts, argc, args),
-            .do => try compiler.do_do(rt, arena, values[1..], options),
             .@"fn" => janetc_fn(fopts, argc, args),
             .@"if" => janetc_if(fopts, argc, args),
             .quasiquote => janetc_quasiquote(fopts, argc, args),
             .set => janetc_varset(fopts, argc, args),
-            .upscope => janetc_upscope(fopts, argc, args),
             .@"var" => janetc_var(fopts, argc, args),
             .@"while" => janetc_while(fopts, argc, args),
         };
@@ -771,6 +770,31 @@ fn do_splice(
     var res = try compiler.compile_value(rt, arena, args[0], options);
     res.flags.spliced = true;
     return res;
+}
+
+fn do_upscope(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    arena: mem.Allocator,
+    args: []const janet.Value,
+    options: CompileOptions,
+) Error!C.Slot {
+    if (args.len > 1) {
+        for (args[0 .. args.len - 1]) |arg| {
+            const result = try compiler.compile_value(rt, arena, arg, .{
+                .flags = .{ .drop = true },
+            });
+            result.free(compiler);
+        }
+    }
+
+    return if (args.len == 0)
+        .constant(.nil)
+    else {
+        var suboptions = options;
+        suboptions.flags.accept_splice = false;
+        return compiler.compile_value(rt, arena, args[args.len - 1], suboptions);
+    };
 }
 
 fn do_do(

@@ -715,28 +715,6 @@ JanetSlot janetc_if(JanetFopts opts, int32_t argn, const Janet *argv) {
     return target;
 }
 
-/* Compile an upscope form. Upscope forms execute their body sequentially and
- * evaluate to the last expression in the body, but without lexical scope. */
-JanetSlot janetc_upscope(JanetFopts opts, int32_t argn, const Janet *argv) {
-    int32_t i;
-    JanetSlot ret = janetc_cslot(janet_wrap_nil());
-    JanetCompiler *c = opts.compiler;
-    JanetFopts subopts = janetc_fopts_default(c);
-    for (i = 0; i < argn; i++) {
-        if (i != argn - 1) {
-            subopts.flags = JANET_FOPTS_DROP;
-        } else {
-            subopts = opts;
-            subopts.flags &= ~JANET_FOPTS_ACCEPT_SPLICE;
-        }
-        ret = janetc_value(subopts, argv[i]);
-        if (i != argn - 1) {
-            janetc_freeslot(c, ret);
-        }
-    }
-    return ret;
-}
-
 /* Add a funcdef to the top most function scope */
 static int32_t janetc_addfuncdef(JanetCompiler *c, JanetFuncDef *def) {
     JanetScope *scope = c->scope;
