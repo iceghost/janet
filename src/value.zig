@@ -458,6 +458,50 @@ pub const Buffer = extern struct {
     pub fn slice(self: *Buffer) []u8 {
         return self.bytes.ptr[0..self.bytes.len];
     }
+
+    // TODO: port those later than compiler and vm
+    extern fn janet_formatbv(b: *Buffer, fmt: [*:0]const u8, std.builtin.VaList) void;
+    extern fn janet_jdn(b: ?*Buffer, depth: c_int, v: Value) *Buffer;
+    extern fn janet_description_b(b: *Buffer, v: Value) void;
+    extern fn janet_to_string_b(b: *Buffer, v: Value) void;
+
+    pub fn printf(b: *Buffer, rt: *janet.Runtime, fmt: [:0]const u8, ...) janet.Runtime.Error!void {
+        var args = @cVaStart();
+        defer @cVaEnd(&args);
+        return b.vprintf(rt, fmt, args);
+    }
+
+    pub fn vprintf(b: *Buffer, rt: *janet.Runtime, fmt: [:0]const u8, args: std.builtin.VaList) janet.Runtime.Error!void {
+        // not implemented yet, but at least we know:
+        // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
+        _ = rt;
+        janet_formatbv(b, fmt.ptr, args);
+    }
+
+    pub fn print_jdn(b: *Buffer, rt: *janet.Runtime, v: Value, options: struct {
+        depth: u32 = 1024,
+    }) janet.Runtime.Error!void {
+        // not implemented yet, but at least we know:
+        // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
+        _ = rt;
+        // in Zig we require user create the buffer, so ignore return value
+        const ret = janet_jdn(b, @intCast(options.depth), v);
+        assert(ret == b);
+    }
+
+    pub fn print_description(b: *Buffer, rt: *janet.Runtime, v: Value) janet.Runtime.Error!void {
+        // not implemented yet, but at least we know:
+        // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
+        _ = rt;
+        janet_description_b(b, v);
+    }
+
+    pub fn print(b: *Buffer, rt: *janet.Runtime, v: Value) janet.Runtime.Error!void {
+        // not implemented yet, but at least we know:
+        // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
+        _ = rt;
+        janet_to_string_b(b, v);
+    }
 };
 
 pub const String = extern struct {
@@ -1993,46 +2037,44 @@ pub const Fiber = extern struct {
     };
 };
 
-// TODO: port those later than compiler and vm
-extern fn janet_formatbv(b: *Buffer, fmt: [*:0]const u8, std.builtin.VaList) void;
-extern fn janet_jdn(b: ?*Buffer, depth: c_int, v: Value) *Buffer;
-extern fn janet_description_b(b: *Buffer, v: Value) void;
-extern fn janet_to_string_b(b: *Buffer, v: Value) void;
-
-pub fn printf(rt: *janet.Runtime, b: *Buffer, fmt: [:0]const u8, ...) janet.Runtime.Error!void {
+pub fn printf(rt: *janet.Runtime, fmt: [:0]const u8, ...) janet.Runtime.Error!*String {
     var args = @cVaStart();
     defer @cVaEnd(&args);
-    return vprintf(rt, b, fmt, args);
+    return vprintf(rt, fmt, args);
 }
 
-pub fn vprintf(rt: *janet.Runtime, b: *Buffer, fmt: [:0]const u8, args: std.builtin.VaList) janet.Runtime.Error!void {
-    // not implemented yet, but at least we know:
-    // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
-    _ = rt;
-    janet_formatbv(b, fmt.ptr, args);
+pub fn vprintf(rt: *janet.Runtime, fmt: [:0]const u8, args: std.builtin.VaList) janet.Runtime.Error!*String {
+    var buffer = try Buffer.init(rt, @intCast(fmt.len));
+    defer buffer.deinit(rt);
+    try buffer.vprintf(rt, fmt, args);
+    return String.from_bytes(rt, buffer.slice());
 }
 
-pub fn print_jdn(rt: *janet.Runtime, b: *Buffer, v: Value, options: struct {
+pub fn print_jdn(rt: *janet.Runtime, v: Value, options: struct {
     depth: u32 = 1024,
-}) janet.Runtime.Error!void {
-    // not implemented yet, but at least we know:
-    // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
-    _ = rt;
-    // in Zig we require user create the buffer, so ignore return value
-    const ret = janet_jdn(b, @intCast(options.depth), v);
-    assert(ret == b);
+}) janet.Runtime.Error!*String {
+    var buffer = try Buffer.init(rt, 10);
+    defer buffer.deinit(rt);
+    try buffer.print_jdn(rt, v, options);
+    return String.from_bytes(rt, buffer.slice());
 }
 
-pub fn print_description(rt: *janet.Runtime, b: *Buffer, v: Value) janet.Runtime.Error!void {
-    // not implemented yet, but at least we know:
-    // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
-    _ = rt;
-    janet_description_b(b, v);
+pub fn print_description(rt: *janet.Runtime, v: Value) janet.Runtime.Error!*String {
+    var buffer = try Buffer.init(rt, 10);
+    defer buffer.deinit(rt);
+    try buffer.print_description(rt, v);
+    return String.from_bytes(rt, buffer.slice());
 }
 
-pub fn print(rt: *janet.Runtime, b: *Buffer, v: Value) janet.Runtime.Error!void {
-    // not implemented yet, but at least we know:
-    // - it might fail with panic (malformed fmt) or oom, so re need rt and error.
-    _ = rt;
-    janet_to_string_b(b, v);
+pub fn print(rt: *janet.Runtime, v: Value) janet.Runtime.Error!*String {
+    return switch (v.repr.unwrap_tag()) {
+        .buffer => String.from_bytes(rt, v.unwrap().buffer.slice()),
+        .string, .symbol, .keyword => v.unwrap().string,
+        else => {
+            var buffer = try Buffer.init(rt, 10);
+            defer buffer.deinit(rt);
+            try buffer.print(rt, v);
+            return String.from_bytes(rt, buffer.slice());
+        },
+    };
 }
