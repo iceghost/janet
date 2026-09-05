@@ -14,6 +14,7 @@ comptime {
     @export(&funcframe_tail, .{ .name = "janet_fiber_funcframe_tail" });
     @export(&cframe, .{ .name = "janet_fiber_cframe" });
     @export(&popframe, .{ .name = "janet_fiber_popframe" });
+    @export(&create, .{ .name = "janet_fiber" });
     @export(&env_detach, .{ .name = "janet_env_detach" });
     @export(&env_valid, .{ .name = "janet_env_valid" });
     @export(&env_maybe_detach, .{ .name = "janet_env_maybe_detach" });
@@ -53,7 +54,7 @@ fn pushn(fiber: *janet.value.Fiber, values: ?[*]const janet.Value, count: i32) c
 
 fn funcframe(fiber: *janet.value.Fiber, func: *janet.value.Function) callconv(.c) c_int {
     _ = fiber.stack.push_funcframe(janet.Runtime.default(), func) catch |err| switch (err) {
-        error.ArityMismatch => return 1,
+        error.ArityTooFew, error.ArityTooMany => return 1,
         error.OutOfMemory => janet.oom(),
     };
     return 0;
@@ -61,7 +62,7 @@ fn funcframe(fiber: *janet.value.Fiber, func: *janet.value.Function) callconv(.c
 
 fn funcframe_tail(fiber: *janet.value.Fiber, func: *janet.value.Function) callconv(.c) c_int {
     _ = fiber.stack.push_funcframe_tail(janet.Runtime.default(), func) catch |err| switch (err) {
-        error.ArityMismatch => return 1,
+        error.ArityTooFew, error.ArityTooMany => return 1,
         error.OutOfMemory => janet.oom(),
     };
     return 0;
@@ -73,6 +74,28 @@ fn cframe(fiber: *janet.value.Fiber, cfunc: janet.value.CFunction) callconv(.c) 
 
 fn popframe(fiber: *janet.value.Fiber) callconv(.c) void {
     fiber.stack.pop_frame(janet.Runtime.default()) catch janet.oom();
+}
+
+fn create(
+    callee: *janet.value.Function,
+    capacity: i32,
+    argc: i32,
+    argv: ?[*]const janet.Value,
+) callconv(.c) ?*janet.value.Fiber {
+    const rt: *janet.Runtime = .default();
+    const arg_count: usize = @intCast(argc);
+    const nil_args: []janet.Value = if (argv == null and arg_count != 0)
+        rt.gpa.alloc(janet.Value, arg_count) catch janet.oom()
+    else
+        @constCast(&.{});
+    defer if (nil_args.len != 0) rt.gpa.free(nil_args);
+    @memset(nil_args, .nil);
+    const args: []const janet.Value = if (argv) |values| values[0..arg_count] else nil_args;
+
+    return janet.value.Fiber.create(rt, callee, @intCast(@max(capacity, 0)), args) catch |err| switch (err) {
+        error.ArityTooFew, error.ArityTooMany => null,
+        error.OutOfMemory => janet.oom(),
+    };
 }
 
 fn env_detach(env: ?*janet.value.FunctionEnvironment) callconv(.c) void {

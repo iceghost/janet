@@ -15,7 +15,7 @@ pub const SourceMapping = extern struct {
 pub const Result = extern struct {
     funcdef: ?*janet.value.FunctionDefinition,
     @"error": ?[*:0]const u8,
-    macrofiber: ?*janet.c.JanetFiber,
+    macrofiber: ?*janet.value.Fiber,
     error_mapping: SourceMapping,
     status: Status,
 

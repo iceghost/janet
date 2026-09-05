@@ -48,22 +48,6 @@ static void fiber_reset(JanetFiber *fiber) {
     janet_fiber_set_status(fiber, JANET_STATUS_NEW);
 }
 
-static JanetFiber *fiber_alloc(int32_t capacity) {
-    Janet *data;
-    JanetFiber *fiber = janet_gcalloc(JANET_MEMORY_FIBER, sizeof(JanetFiber));
-    if (capacity < 32) {
-        capacity = 32;
-    }
-    fiber->capacity = capacity;
-    data = array_allocate(sizeof(Janet), capacity);
-    if (NULL == data) {
-        JANET_OUT_OF_MEMORY;
-    }
-    janet_vm.next_collection += sizeof(Janet) * capacity;
-    fiber->data = data;
-    return fiber;
-}
-
 /* Create a new fiber with argn values on the stack by reusing a fiber. */
 JanetFiber *janet_fiber_reset(JanetFiber *fiber, JanetFunction *callee, int32_t argc, const Janet *argv) {
     int32_t newstacktop;
@@ -90,11 +74,6 @@ JanetFiber *janet_fiber_reset(JanetFiber *fiber, JanetFunction *callee, int32_t 
     fiber->supervisor_channel = NULL;
 #endif
     return fiber;
-}
-
-/* Create a new fiber with argn values on the stack. */
-JanetFiber *janet_fiber(JanetFunction *callee, int32_t capacity, int32_t argc, const Janet *argv) {
-    return janet_fiber_reset(fiber_alloc(capacity), callee, argc, argv);
 }
 
 /* CFuns */

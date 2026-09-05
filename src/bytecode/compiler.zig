@@ -103,7 +103,7 @@ pub const C = extern struct {
     pub const Result = extern struct {
         funcdef: ?*janet.value.FunctionDefinition,
         @"error": ?[*:0]const u8,
-        macrofiber: ?*janet.c.JanetFiber,
+        macrofiber: ?*janet.value.Fiber,
         error_mapping: SourceMapping,
         status: Status,
 
@@ -268,7 +268,12 @@ extern fn janetc_resolve(compiler: *C, symbol: [*:0]const u8) callconv(.c) C.Slo
 extern fn janetc_return(compiler: *C, slot: C.Slot) callconv(.c) C.Slot;
 extern fn janetc_copy(compiler: *C, destination: C.Slot, source: C.Slot) callconv(.c) void;
 extern fn janetc_cerror(compiler: *C, message: [*:0]const u8) callconv(.c) void;
-extern fn janetc_macroexpand1(compiler: *C, source: janet.Value, out: *janet.Value, special: *?*const C.Special) callconv(.c) c_int;
+extern fn janetc_error(compiler: *C, message: [*:0]const u8) callconv(.c) void;
+extern fn janetc_special(name: [*:0]const u8) callconv(.c) ?*const C.Special;
+extern fn janet_formatc(format: [*:0]const u8, ...) callconv(.c) [*:0]const u8;
+extern fn janet_continue(fiber: *janet.value.Fiber, in: janet.Value, out: *janet.Value) callconv(.c) janet.Runtime.Signal;
+extern fn janet_gclock() callconv(.c) c_int;
+extern fn janet_gcunlock(handle: c_int) callconv(.c) void;
 extern fn janetc_emit_s(compiler: *C, opcode: u8, slot: C.Slot, write: i32) callconv(.c) i32;
 extern fn janetc_emit_ss(compiler: *C, opcode: u8, lhs: C.Slot, rhs: C.Slot, write: i32) callconv(.c) i32;
 extern fn janetc_emit_sss(compiler: *C, opcode: u8, first: C.Slot, second: C.Slot, third: C.Slot, write: i32) callconv(.c) i32;
@@ -336,8 +341,7 @@ pub fn compile_value(
     var special: ?*const C.Special = null;
     var macro_expansions: usize = 200;
     while (macro_expansions > 0 and
-        compiler.c.result.status != .@"error" and
-        janetc_macroexpand1(&compiler.c, source, &source, &special) != 0) : (macro_expansions -= 1)
+        try compiler.macroexpand1(rt, source, &source, &special)) : (macro_expansions -= 1)
     {}
     if (macro_expansions == 0) return compiler.fail("recursed too deeply in macro expansion");
 
@@ -420,6 +424,79 @@ pub fn compile_value(
         result = options.hint;
     }
     return result;
+}
+
+/// Expand a macro one time. Also get the special form compiler if we find one.
+fn macroexpand1(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    source: janet.Value,
+    out: *janet.Value,
+    special: *?*const C.Special,
+) Error!bool {
+    if (!source.checktype(.tuple)) return false;
+    const form = source.unwrap().tuple;
+    const values = form.slice();
+    if (values.len == 0) return false;
+
+    if (form.line >= 0) {
+        compiler.c.current_mapping = .{
+            .line = form.line,
+            .column = form.column,
+        };
+    }
+
+    if (form.gc.flags.payload & 1 != 0 or !values[0].checktype(.symbol)) return false;
+    const name = values[0].unwrap().string;
+    if (janetc_special(@ptrCast(name.slice().ptr))) |s| {
+        special.* = s;
+        return false;
+    }
+
+    const env = compiler.c.env.?;
+    const binding = env.resolve(name);
+    if (binding.type != .macro and binding.type != .dynamic_macro) return false;
+    const macro_value = switch (binding.type) {
+        .dynamic_macro => binding.value.unwrap().array.peek(),
+        else => binding.value,
+    };
+    if (!macro_value.checktype(.function)) return false;
+
+    const macro = macro_value.unwrap().function;
+    const args = values[1..];
+    const fiber = janet.value.Fiber.create(rt, macro, 64, args) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.ArityTooFew => {
+            compiler.c.result.macrofiber = null;
+            return compiler.fail_printf("macro arity mismatch, expected at least %d, got %zu", .{ macro.def.min_arity, args.len });
+        },
+        error.ArityTooMany => {
+            compiler.c.result.macrofiber = null;
+            return compiler.fail_printf("macro arity mismatch, expected at most %d, got %zu", .{ macro.def.max_arity, args.len });
+        },
+    };
+    fiber.env = env;
+
+    const lock = janet_gclock();
+    defer janet_gcunlock(lock);
+
+    const macro_form = try janet.Value.keyword(rt, "macro-form");
+    const macro_lints = try janet.Value.keyword(rt, "macro-lints");
+    try env.put(rt, macro_form, source);
+    if (compiler.c.lints) |lints| try env.put(rt, macro_lints, .array(lints));
+
+    var result: janet.Value = undefined;
+    const status = janet_continue(fiber, .nil, &result);
+    try env.put(rt, macro_form, .nil);
+    try env.put(rt, macro_lints, .nil);
+
+    if (status != .ok) {
+        compiler.c.result.macrofiber = fiber;
+        return compiler.fail_printf("(macro) %V", .{result});
+    }
+
+    out.* = result;
+    return true;
 }
 
 pub fn compile_value_many(
@@ -553,5 +630,15 @@ fn allocfar(compiler: *Compiler, rt: *janet.Runtime) Error!Register {
 
 fn fail(compiler: *Compiler, comptime s: [:0]const u8) error{CompileFailed} {
     janetc_cerror(&compiler.c, s.ptr);
+    return error.CompileFailed;
+}
+
+fn fail_printf(
+    compiler: *Compiler,
+    comptime format: [:0]const u8,
+    args: anytype,
+) error{CompileFailed} {
+    const message = @call(.auto, janet_formatc, .{format.ptr} ++ args);
+    janetc_error(&compiler.c, message);
     return error.CompileFailed;
 }

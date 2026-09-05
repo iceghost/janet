@@ -194,6 +194,8 @@ pub const Box = extern struct {
         table: *Table,
         tuple: *Tuple,
         @"struct": *Struct,
+        fiber: *Fiber,
+        function: *Function,
     } {
         return switch (v.repr.unwrap_tag()) {
             .number => .{ .number = v.repr.float },
@@ -205,6 +207,8 @@ pub const Box = extern struct {
             .array => .{ .array = @ptrFromInt(v.repr.pointer_bits()) },
             .buffer => .{ .buffer = @ptrFromInt(v.repr.pointer_bits()) },
             .table => .{ .table = @ptrFromInt(v.repr.pointer_bits()) },
+            .fiber => .{ .fiber = @ptrFromInt(v.repr.pointer_bits()) },
+            .function => .{ .function = @ptrFromInt(v.repr.pointer_bits()) },
             .tuple => {
                 const p: Tuple.Extern.Pointer = .{ .ptr = @ptrFromInt(v.repr.pointer_bits()) };
                 return .{ .tuple = p.cast_head() };
@@ -231,6 +235,10 @@ pub const Box = extern struct {
 
     pub fn table(t: *Table) Box {
         return .{ .repr = .box_any(.table, t) };
+    }
+
+    pub fn fiber(f: *Fiber) Box {
+        return .{ .repr = .box_any(.fiber, f) };
     }
 
     pub fn number(n: f64) Box {
@@ -1716,7 +1724,7 @@ pub const Fiber = extern struct {
     /// Stack memory
     stack: Stack,
     /// Dynamic bindings table (usually current environment).
-    env: *Table,
+    env: ?*Table,
     /// Keep linked list of fibers for restarting pending fibers
     child: ?*Fiber,
     /// Last returned value from a fiber
@@ -1731,6 +1739,60 @@ pub const Fiber = extern struct {
     ev_state: ?*anyopaque,
     /// Channel to push self to when complete
     supervisor_channel: ?*anyopaque,
+
+    pub const ArityError = error{
+        ArityTooFew,
+        ArityTooMany,
+    };
+
+    pub fn create(
+        rt: *janet.Runtime,
+        callee: *Function,
+        requested_capacity: u32,
+        args: []const Value,
+    ) (ArityError || Allocator.Error)!*Fiber {
+        const capacity = @max(requested_capacity, 32);
+        const handle, const fiber, _ = try janet.gc.create_deferred(rt, Fiber, u8, 0);
+        errdefer handle.destroy();
+
+        const stack_data = try janet.gc.alloc(rt, Value, capacity);
+
+        fiber.* = .{
+            .gc = .disabled,
+            .flags = .{
+                .yield = true,
+                .status = .new,
+                .resume_no_useval = true,
+                .resume_no_skip = true,
+            },
+            .maxstack = std.math.maxInt(i32),
+            .stack = .{
+                .data = .{
+                    .ptr = stack_data.ptr,
+                    .len = Stack.frame_size,
+                    .capacity = capacity,
+                },
+                .frame = 0,
+                .stackstart = Stack.frame_size,
+            },
+            .env = null,
+            .child = null,
+            .last_value = .nil,
+            .sched_id = 0,
+            .ev_callback = null,
+            .ev_stream = null,
+            .ev_state = null,
+            .supervisor_channel = null,
+        };
+        errdefer janet.gc.free(rt, fiber.stack.data.ptr);
+
+        try fiber.stack.pushn(rt, args);
+        const view = try fiber.stack.push_funcframe(rt, callee);
+        view.frame(fiber.stack.data.ptr[0..fiber.stack.data.len]).flags.entrance = true;
+
+        handle.finish(.fiber);
+        return fiber;
+    }
 
     pub const Flags = packed struct(u32) {
         ev_in_flight: bool = false,
@@ -1849,12 +1911,13 @@ pub const Fiber = extern struct {
             self.data.len = varargs_index + 1;
         }
 
-        pub fn push_funcframe(self: *Stack, rt: *janet.Runtime, func: *Function) error{ ArityMismatch, OutOfMemory }!View {
+        pub fn push_funcframe(self: *Stack, rt: *janet.Runtime, func: *Function) (ArityError || Allocator.Error)!View {
             const def = func.def;
             const next_frame_begin = self.stackstart;
             const arity: i64 = self.data.len - next_frame_begin;
 
-            if (arity < def.min_arity or arity > def.max_arity) return error.ArityMismatch;
+            if (arity < def.min_arity) return error.ArityTooFew;
+            if (arity > def.max_arity) return error.ArityTooMany;
 
             const next_stack_top = next_frame_begin + def.slotcount + frame_size;
             try self.reserve_total(rt, next_stack_top);
@@ -1888,11 +1951,12 @@ pub const Fiber = extern struct {
             return view;
         }
 
-        pub fn push_funcframe_tail(self: *Stack, rt: *janet.Runtime, func: *Function) error{ ArityMismatch, OutOfMemory }!View {
+        pub fn push_funcframe_tail(self: *Stack, rt: *janet.Runtime, func: *Function) (ArityError || Allocator.Error)!View {
             const def = func.def;
             const arity: i64 = self.data.len - self.stackstart;
 
-            if (arity < def.min_arity or arity > def.max_arity) return error.ArityMismatch;
+            if (arity < def.min_arity) return error.ArityTooFew;
+            if (arity > def.max_arity) return error.ArityTooMany;
 
             const next_frame_top = self.frame + def.slotcount;
             const next_stack_top = next_frame_top + frame_size;
