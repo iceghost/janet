@@ -10,6 +10,7 @@ pub const core = @import("core.zig");
 pub const gc = @import("gc.zig");
 pub const Runtime = @import("runtime.zig");
 pub const value = @import("value.zig");
+pub const vector = @import("core/vector.zig");
 pub const Array = value.Array;
 pub const Buffer = value.Buffer;
 pub const Value = value.Box;
@@ -26,6 +27,7 @@ pub const c = @cImport({
 comptime {
     _ = core;
     _ = bytecode;
+    _ = vector;
     _ = @import("include/janet.zig");
     _ = @import("core/array.zig");
     _ = @import("core/buffer.zig");

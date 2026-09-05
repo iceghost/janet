@@ -225,7 +225,6 @@ const JanetFunOptimizer *janetc_funopt(uint32_t flags);
 
 JanetSlot janetc_break(JanetFopts opts, int32_t argn, const Janet *argv);
 JanetSlot janetc_def(JanetFopts opts, int32_t argn, const Janet *argv);
-JanetSlot janetc_do(JanetFopts opts, int32_t argn, const Janet *argv);
 JanetSlot janetc_fn(JanetFopts opts, int32_t argn, const Janet *argv);
 JanetSlot janetc_if(JanetFopts opts, int32_t argn, const Janet *argv);
 JanetSlot janetc_quasiquote(JanetFopts opts, int32_t argn, const Janet *argv);
@@ -279,7 +278,6 @@ JanetSlot janetc_value(JanetFopts opts, Janet x);
 /* Push and pop from the scope stack */
 void janetc_scope(JanetScope *s, JanetCompiler *c, int flags, const char *name);
 void janetc_popscope(JanetCompiler *c);
-void janetc_popscope_keepslot(JanetCompiler *c, JanetSlot retslot);
 JanetFuncDef *janetc_pop_funcdef(JanetCompiler *c);
 
 /* Create a destroy slot */

@@ -715,31 +715,6 @@ JanetSlot janetc_if(JanetFopts opts, int32_t argn, const Janet *argv) {
     return target;
 }
 
-/* Compile a do form. Do forms execute their body sequentially and
- * evaluate to the last expression in the body. */
-JanetSlot janetc_do(JanetFopts opts, int32_t argn, const Janet *argv) {
-    int32_t i;
-    JanetSlot ret = janetc_cslot(janet_wrap_nil());
-    JanetCompiler *c = opts.compiler;
-    JanetFopts subopts = janetc_fopts_default(c);
-    JanetScope tempscope;
-    janetc_scope(&tempscope, c, 0, "do");
-    for (i = 0; i < argn; i++) {
-        if (i != argn - 1) {
-            subopts.flags = JANET_FOPTS_DROP;
-        } else {
-            subopts = opts;
-            subopts.flags &= ~JANET_FOPTS_ACCEPT_SPLICE;
-        }
-        ret = janetc_value(subopts, argv[i]);
-        if (i != argn - 1) {
-            janetc_freeslot(c, ret);
-        }
-    }
-    janetc_popscope_keepslot(c, ret);
-    return ret;
-}
-
 /* Compile an upscope form. Upscope forms execute their body sequentially and
  * evaluate to the last expression in the body, but without lexical scope. */
 JanetSlot janetc_upscope(JanetFopts opts, int32_t argn, const Janet *argv) {

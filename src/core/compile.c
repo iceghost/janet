@@ -167,69 +167,6 @@ void janetc_scope(JanetScope *s, JanetCompiler *c, int flags, const char *name) 
     *s = scope;
 }
 
-/* Leave a scope. */
-void janetc_popscope(JanetCompiler *c) {
-    JanetScope *oldscope = c->scope;
-    JanetScope *newscope = oldscope->parent;
-    /* Move free slots to parent scope if not a new function.
-     * We need to know the total number of slots used when compiling the function. */
-    if (!(oldscope->flags & (JANET_SCOPE_FUNCTION | JANET_SCOPE_UNUSED)) && newscope) {
-        /* Parent scopes inherit child's closure flag. Needed
-         * for while loops. (if a while loop creates a closure, it
-         * is compiled to a tail recursive iife) */
-        if (oldscope->flags & JANET_SCOPE_CLOSURE) {
-            newscope->flags |= JANET_SCOPE_CLOSURE;
-        }
-        janetc_regalloc_reserve(&newscope->ra, oldscope->ra.max + 1);
-        if (newscope->ra.max < oldscope->ra.max) {
-            newscope->ra.max = oldscope->ra.max;
-        }
-
-        /* Keep upvalue slots and symbols for debugging. */
-        for (int32_t i = 0; i < janet_v_count(oldscope->syms); i++) {
-            SymPair pair = oldscope->syms[i];
-            /* Check for unused symbols */
-            if (pair.referenced == 0 && pair.sym) {
-                janetc_lintf(c, JANET_C_LINT_STRICT, "binding %q is unused", janet_wrap_symbol(pair.sym));
-            }
-            /* The variable should not be lexically accessible */
-            pair.sym = NULL;
-            if (pair.death_pc == UINT32_MAX) {
-                pair.death_pc = (uint32_t) janet_v_count(c->buffer);
-            }
-            if (pair.keep) {
-                /* The variable should also not be included in the locals */
-                pair.sym2 = NULL;
-                janetc_regalloc_touch(&newscope->ra, pair.slot.index);
-            }
-            janet_v_push(newscope->syms, pair);
-        }
-    }
-
-    /* Free the old scope */
-    janet_v_free(oldscope->consts);
-    janet_v_free(oldscope->syms);
-    janet_v_free(oldscope->envs);
-    janet_v_free(oldscope->defs);
-    janetc_regalloc_deinit(&oldscope->ra);
-    janetc_regalloc_deinit(&oldscope->ua);
-    /* Update pointer */
-    if (newscope)
-        newscope->child = NULL;
-    c->scope = newscope;
-}
-
-/* Leave a scope but keep a slot allocated. */
-void janetc_popscope_keepslot(JanetCompiler *c, JanetSlot retslot) {
-    JanetScope *scope;
-    janetc_popscope(c);
-    scope = c->scope;
-    if (scope && retslot.envindex < 0 && retslot.index >= 0) {
-        janetc_regalloc_reserve(&scope->ra, retslot.index + 1);
-        janetc_regalloc_touch(&scope->ra, retslot.index);
-    }
-}
-
 static int lookup_missing(
     JanetCompiler *c,
     const uint8_t *sym,

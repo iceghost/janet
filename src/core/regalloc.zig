@@ -1,6 +1,3 @@
-const std = @import("std");
-const allocator = std.heap.smp_allocator;
-
 const janet = @import("janet");
 const Register = janet.compile.Register;
 const RegisterAllocator = janet.compile.Register.Allocator;
@@ -23,11 +20,11 @@ fn init(registers: *RegisterAllocator) callconv(.c) void {
 }
 
 fn deinit(registers: *RegisterAllocator) callconv(.c) void {
-    registers.deinit(allocator);
+    registers.deinit(janet.Runtime.default().gpa);
 }
 
 fn @"1"(registers: *RegisterAllocator) callconv(.c) i32 {
-    const reg = registers.alloc(allocator) catch janet.oom();
+    const reg = registers.alloc(janet.Runtime.default().gpa) catch janet.oom();
     return @bitCast(@intFromEnum(reg));
 }
 
@@ -36,7 +33,7 @@ fn free(registers: *RegisterAllocator, reg: i32) callconv(.c) void {
 }
 
 fn temp(registers: *RegisterAllocator, nth: c_int) callconv(.c) i32 {
-    const reg = registers.temp(allocator, @enumFromInt(nth)) catch janet.oom();
+    const reg = registers.temp(janet.Runtime.default().gpa, @enumFromInt(nth)) catch janet.oom();
     return @bitCast(@intFromEnum(reg));
 }
 
@@ -46,11 +43,11 @@ fn freetemp(registers: *RegisterAllocator, reg: i32, nth: c_int) callconv(.c) vo
 }
 
 fn clone(dest: *RegisterAllocator, src: *RegisterAllocator) callconv(.c) void {
-    dest.* = src.clone(allocator) catch janet.oom();
+    dest.* = src.clone(janet.Runtime.default().gpa) catch janet.oom();
 }
 
 fn reserve(registers: *RegisterAllocator, count: u32) callconv(.c) void {
-    registers.reserve(allocator, count) catch janet.oom();
+    registers.reserve(janet.Runtime.default().gpa, count) catch janet.oom();
 }
 
 fn touch(registers: *RegisterAllocator, reg: i32) callconv(.c) void {

@@ -81,14 +81,7 @@ fn srealloc(pointer: ?[*]align(alignment_size) u8, new_size: usize) callconv(.c)
     return memory.ptr;
 }
 
-fn sfree(pointer: ?[*]align(alignment_size) u8) callconv(.c) void {
-    const memory = pointer orelse return;
-    const rt = janet.Runtime.default();
-    var arena = rt.arena_per_gc.promote(rt.gpa);
-    defer rt.arena_per_gc = arena.state;
-
-    janet.gc.free_untracked(arena.allocator(), memory);
-}
+fn sfree(_: ?[*]align(alignment_size) u8) callconv(.c) void {}
 
 fn sfreeall() callconv(.c) void {
     const rt = janet.Runtime.default();

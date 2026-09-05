@@ -10,6 +10,7 @@ comptime {
     @export(&toslots, .{ .name = "janetc_toslots" });
     @export(&toslotskv, .{ .name = "janetc_toslotskv" });
     @export(&pushslots, .{ .name = "janetc_pushslots" });
+    @export(&popscope, .{ .name = "janetc_popscope" });
 }
 
 fn default(
@@ -98,4 +99,10 @@ fn pushslots(c: *Compiler.C, slots: x.array_list.Thin(Compiler.C.Slot)) callconv
     var arguments = slots;
     const res = compiler.emit_arguments(rt, scratch.allocator(), arguments.items());
     return if (res.spliced) -1 - res.min_arity else res.min_arity;
+}
+
+fn popscope(c: *Compiler.C) callconv(.c) void {
+    const rt: *janet.Runtime = .default();
+    const compiler: *Compiler = @fieldParentPtr("c", c);
+    compiler.pop_scope(rt) catch rt.oom();
 }

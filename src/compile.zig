@@ -29,7 +29,7 @@ pub const Result = extern struct {
 pub const Slot = extern struct {
     /// The slot's constant value, when `flags.constant` is set.
     constant: janet.Value,
-    index: i32,
+    index: Register,
     /// Zero for a local slot, or a positive number for an upvalue.
     envindex: i32,
     flags: Flags,
@@ -204,6 +204,7 @@ pub const Register = enum(u32) {
     temp_5,
     temp_6,
     temp_7,
+    none = std.math.maxInt(u32),
     _,
 
     fn temp_bit(self: Register) u3 {
@@ -213,7 +214,7 @@ pub const Register = enum(u32) {
         return @intCast(bit_index - @intFromEnum(Register.temp_0));
     }
 
-    fn max(a: Register, b: Register) Register {
+    pub fn max(a: Register, b: Register) Register {
         const a_val = @intFromEnum(a);
         const b_val = @intFromEnum(b);
         return if (a_val > b_val) a else b;
@@ -269,6 +270,11 @@ pub const Register = enum(u32) {
         pub fn reserve(self: *Register.Allocator, gpa: mem.Allocator, total: u32) mem.Allocator.Error!void {
             if (total > @intFromEnum(Register.temp_0)) try self.reserve_temps(gpa);
             try self.bit_set.reserve_total(gpa, total);
+        }
+
+        pub fn reserve_inclusive(self: *Register.Allocator, gpa: mem.Allocator, reg: Register) mem.Allocator.Error!void {
+            assert(reg != .none);
+            try self.reserve(gpa, @intFromEnum(reg) + 1);
         }
 
         /// Mark a register as allocated.

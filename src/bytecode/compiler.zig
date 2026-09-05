@@ -158,7 +158,7 @@ pub const C = extern struct {
     pub const Slot = extern struct {
         /// The slot's constant value, when `flags.constant` is set.
         value: janet.Value,
-        index: i32,
+        index: Register,
         /// Zero for a local slot, or a positive number for an upvalue.
         envindex: i32,
         flags: Flags,
@@ -182,7 +182,7 @@ pub const C = extern struct {
                 .flags = .{
                     .constant = true,
                 },
-                .index = -1,
+                .index = .none,
                 .value = v,
                 .envindex = -1,
             };
@@ -197,7 +197,7 @@ pub const C = extern struct {
                 .flags = .{
                     .type = .full,
                 },
-                .index = @bitCast(@intFromEnum(try c.allocfar())),
+                .index = try c.allocfar(),
                 .value = .nil,
                 .envindex = -1,
             };
@@ -206,8 +206,13 @@ pub const C = extern struct {
         pub fn free(slot: Slot, c: *Compiler) void {
             if (slot.flags.constant or slot.flags.ref or slot.flags.named) return;
             if (slot.envindex >= 0) return;
-            c.c.scope.?.ra.free(@enumFromInt(@as(u32, @bitCast(slot.index))));
+            c.c.scope.?.ra.free(slot.index);
         }
+    };
+
+    pub const SlotHeadPair = extern struct {
+        lhs: janet.Value,
+        rhs: Compiler.C.Slot,
     };
 };
 
@@ -252,7 +257,6 @@ extern fn janet_cstring(cstring: [*:0]const u8) callconv(.c) [*:0]const u8;
 extern fn janet_tuple_n(values: ?[*]const janet.Value, count: i32) callconv(.c) [*]const janet.Value;
 extern fn janet_def_addflags(def: *janet.value.FunctionDefinition) callconv(.c) void;
 extern fn janetc_scope(scope: *C.Scope, compiler: *C, flags: C.Scope.Flags, name: [*:0]const u8) callconv(.c) void;
-extern fn janetc_popscope(compiler: *C) callconv(.c) void;
 extern fn janetc_pop_funcdef(compiler: *C) callconv(.c) *janet.value.FunctionDefinition;
 extern fn janetc_array(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
 extern fn janetc_tuple(options: C.Fopts, source: janet.Value) callconv(.c) C.Slot;
@@ -264,6 +268,7 @@ extern fn janetc_return(compiler: *C, slot: C.Slot) callconv(.c) C.Slot;
 extern fn janetc_copy(compiler: *C, destination: C.Slot, source: C.Slot) callconv(.c) void;
 extern fn janetc_cerror(compiler: *C, message: [*:0]const u8) callconv(.c) void;
 extern fn janetc_error(compiler: *C, message: [*:0]const u8) callconv(.c) void;
+extern fn janetc_lintf(compiler: *C, level: c_int, format: [*:0]const u8, ...) callconv(.c) void;
 extern fn janet_formatc(format: [*:0]const u8, ...) callconv(.c) [*:0]const u8;
 extern fn janet_continue(fiber: *janet.value.Fiber, in: janet.Value, out: *janet.Value) callconv(.c) janet.Runtime.Signal;
 extern fn janet_gclock() callconv(.c) c_int;
@@ -273,7 +278,6 @@ extern fn janetc_emit_ss(compiler: *C, opcode: u8, lhs: C.Slot, rhs: C.Slot, wri
 extern fn janetc_emit_sss(compiler: *C, opcode: u8, first: C.Slot, second: C.Slot, third: C.Slot, write: i32) callconv(.c) i32;
 extern fn janetc_break(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_def(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
-extern fn janetc_do(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_fn(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_if(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 extern fn janetc_quasiquote(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
@@ -289,10 +293,10 @@ fn get_target(
     hint: C.Slot,
     flags: C.Fopts.Flags,
 ) Error!C.Slot {
-    if (flags.hint and hint.envindex < 0 and hint.index >= 0 and hint.index <= 0xFF) return hint;
+    if (flags.hint and hint.envindex < 0 and @intFromEnum(hint.index) <= 0xFF) return hint;
     return .{
         .value = .nil,
-        .index = @bitCast(@intFromEnum(try compiler.allocfar(rt))),
+        .index = try compiler.allocfar(rt),
         .envindex = -1,
         .flags = .{},
     };
@@ -317,7 +321,7 @@ pub fn compile(
         compiler.c.result.funcdef = def;
     } else {
         compiler.c.result.error_mapping = compiler.c.current_mapping;
-        janetc_popscope(&compiler.c);
+        try compiler.pop_scope(rt);
     }
 
     return compiler.c.result;
@@ -419,7 +423,7 @@ pub fn compile_value(
             .splice => try compiler.do_splice(rt, arena, values[1..], options),
             .@"break" => janetc_break(fopts, argc, args),
             .def => janetc_def(fopts, argc, args),
-            .do => janetc_do(fopts, argc, args),
+            .do => try compiler.do_do(rt, arena, values[1..], options),
             .@"fn" => janetc_fn(fopts, argc, args),
             .@"if" => janetc_if(fopts, argc, args),
             .quasiquote => janetc_quasiquote(fopts, argc, args),
@@ -682,6 +686,52 @@ fn allocfar(compiler: *Compiler, rt: *janet.Runtime) Error!Register {
     return reg;
 }
 
+pub fn pop_scope(compiler: *Compiler, rt: *janet.Runtime) mem.Allocator.Error!void {
+    var arena_per_gc = rt.arena_per_gc.promote(rt.gpa);
+    defer rt.arena_per_gc = arena_per_gc.state;
+
+    const old_scope = compiler.c.scope.?;
+    const new_scope = old_scope.parent;
+
+    if (!old_scope.flags.function and !old_scope.flags.unused) {
+        if (new_scope) |parent| {
+            if (old_scope.flags.closure) parent.flags.closure = true;
+
+            try parent.ra.reserve_inclusive(rt.gpa, old_scope.ra.max);
+            parent.ra.max = .max(parent.ra.max, old_scope.ra.max);
+
+            for (old_scope.syms.items()) |old_pair| {
+                var pair = old_pair;
+                if (pair.referenced == 0) {
+                    if (pair.sym) |symbol| {
+                        const symbol_pointer: janet.value.String.Extern.Pointer = .{
+                            .ptr = @ptrCast(@alignCast(@constCast(symbol))),
+                        };
+                        janetc_lintf(&compiler.c, 2, "binding %q is unused", janet.Value.wrap_symbol(symbol_pointer.cast_head()));
+                    }
+                }
+
+                pair.sym = null;
+                if (pair.death_pc == std.math.maxInt(u32)) {
+                    pair.death_pc = @intCast(compiler.c.buffer.items().len);
+                }
+                if (pair.keep != 0) {
+                    pair.sym2 = null;
+                    parent.ra.touch(pair.slot.index);
+                }
+                try parent.syms.reserve(arena_per_gc.allocator(), 1);
+                parent.syms.append(pair);
+            }
+        }
+    }
+
+    old_scope.ra.deinit(rt.gpa);
+    old_scope.ua.deinit(rt.gpa);
+
+    if (new_scope) |parent| parent.child = null;
+    compiler.c.scope = new_scope;
+}
+
 fn fail(compiler: *Compiler, comptime s: [:0]const u8) error{CompileFailed} {
     janetc_cerror(&compiler.c, s.ptr);
     return error.CompileFailed;
@@ -721,4 +771,43 @@ fn do_splice(
     var res = try compiler.compile_value(rt, arena, args[0], options);
     res.flags.spliced = true;
     return res;
+}
+
+fn do_do(
+    compiler: *Compiler,
+    rt: *janet.Runtime,
+    arena: mem.Allocator,
+    args: []const janet.Value,
+    options: CompileOptions,
+) Error!C.Slot {
+    var scope: C.Scope = undefined;
+    janetc_scope(&scope, &compiler.c, .{}, "do");
+
+    if (args.len > 1) {
+        for (args[0 .. args.len - 1]) |arg| {
+            const res = try compiler.compile_value(rt, arena, arg, .{
+                .flags = .{ .drop = true },
+            });
+            res.free(compiler);
+        }
+    }
+
+    const result: C.Slot = if (args.len == 0)
+        .constant(.nil)
+    else blk: {
+        var suboptions: CompileOptions = options;
+        suboptions.flags.accept_splice = false;
+        break :blk try compiler.compile_value(rt, arena, args[args.len - 1], suboptions);
+    };
+
+    try compiler.pop_scope(rt);
+
+    const s = compiler.c.scope.?;
+
+    if (result.envindex < 0 and result.index != .none) {
+        try s.ra.reserve_inclusive(rt.gpa, result.index);
+        s.ra.touch(result.index);
+    }
+
+    return result;
 }

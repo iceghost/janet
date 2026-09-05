@@ -35,7 +35,11 @@ pub fn Thin(comptime T: type) type {
         }
 
         fn head(self: Self) *Head {
-            return x.mem_recover_head(Head, self.base.?);
+            return x.mem_recover_head(Head, @ptrCast(self.base.?));
+        }
+
+        pub fn capacity(self: Self) u32 {
+            return if (self.base == null) 0 else self.head().capacity;
         }
 
         pub fn items(self: Self) []align(alignment_size) T {
@@ -45,6 +49,16 @@ pub fn Thin(comptime T: type) type {
             } else {
                 return &.{};
             }
+        }
+
+        pub fn reserve(self: *Self, gpa: Allocator, unused: usize) Allocator.Error!void {
+            const total = try add_or_oom(@intCast(self.items().len), unused);
+            return self.reserve_total(gpa, total);
+        }
+
+        pub fn reserve_total(self: *Self, gpa: Allocator, total: u32) Allocator.Error!void {
+            if (self.capacity() >= total) return;
+            return self.reserve_total_precise(gpa, grow_capacity(T, total));
         }
 
         pub fn reserve_total_precise(self: *Self, gpa: Allocator, total: u32) Allocator.Error!void {
