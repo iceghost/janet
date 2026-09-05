@@ -88,7 +88,6 @@ typedef struct JanetScope JanetScope;
 typedef struct JanetSlot JanetSlot;
 typedef struct JanetFopts JanetFopts;
 typedef struct JanetFunOptimizer JanetFunOptimizer;
-typedef struct JanetSpecial JanetSpecial;
 
 #define JANET_SLOT_CONSTANT 0x10000
 #define JANET_SLOT_NAMED 0x20000
@@ -219,19 +218,24 @@ struct JanetFunOptimizer {
     JanetSlot(*optimize)(JanetFopts opts, JanetSlot *args);
 };
 
-/* A grouping of a named special and the corresponding compiler fragment */
-struct JanetSpecial {
-    const char *name;
-    JanetSlot(*compile)(JanetFopts opts, int32_t argn, const Janet *argv);
-};
-
 /****************************************************/
 
 /* Get an optimizer if it exists, otherwise NULL */
 const JanetFunOptimizer *janetc_funopt(uint32_t flags);
 
-/* Get a special. Return NULL if none exists */
-const JanetSpecial *janetc_special(const uint8_t *name);
+JanetSlot janetc_break(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_def(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_do(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_fn(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_if(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_quasiquote(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_quote(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_varset(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_splice(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_unquote(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_upscope(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_var(JanetFopts opts, int32_t argn, const Janet *argv);
+JanetSlot janetc_while(JanetFopts opts, int32_t argn, const Janet *argv);
 
 #define JANET_DEFFLAG_NO_SHADOWCHECK 1
 #define JANET_DEFFLAG_NO_UNUSED 2

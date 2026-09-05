@@ -53,7 +53,7 @@ static void check_24bit_jump(JanetCompiler *c, int32_t lab1, int32_t lab2) {
     }
 }
 
-static JanetSlot janetc_quote(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_quote(JanetFopts opts, int32_t argn, const Janet *argv) {
     if (argn != 1) {
         janetc_cerror(opts.compiler, "expected 1 argument to quote");
         return janetc_cslot(janet_wrap_nil());
@@ -61,7 +61,7 @@ static JanetSlot janetc_quote(JanetFopts opts, int32_t argn, const Janet *argv) 
     return janetc_cslot(argv[0]);
 }
 
-static JanetSlot janetc_splice(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_splice(JanetFopts opts, int32_t argn, const Janet *argv) {
     JanetSlot ret;
     if (!(opts.flags & JANET_FOPTS_ACCEPT_SPLICE)) {
         janetc_cerror(opts.compiler, "splice can only be used in function parameters and data constructors, it has no effect here");
@@ -145,7 +145,7 @@ static JanetSlot quasiquote(JanetFopts opts, Janet x, int depth, int level) {
     }
 }
 
-static JanetSlot janetc_quasiquote(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_quasiquote(JanetFopts opts, int32_t argn, const Janet *argv) {
     if (argn != 1) {
         janetc_cerror(opts.compiler, "expected 1 argument to quasiquote");
         return janetc_cslot(janet_wrap_nil());
@@ -153,7 +153,7 @@ static JanetSlot janetc_quasiquote(JanetFopts opts, int32_t argn, const Janet *a
     return quasiquote(opts, argv[0], opts.compiler->recursion_guard, 0);
 }
 
-static JanetSlot janetc_unquote(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_unquote(JanetFopts opts, int32_t argn, const Janet *argv) {
     (void) argn;
     (void) argv;
     janetc_cerror(opts.compiler, "cannot use unquote here");
@@ -295,7 +295,7 @@ static const Janet *janetc_make_sourcemap(JanetCompiler *c) {
     return janet_tuple_end(tup);
 }
 
-static JanetSlot janetc_varset(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_varset(JanetFopts opts, int32_t argn, const Janet *argv) {
     if (argn != 2) {
         janetc_cerror(opts.compiler, "expected 2 arguments to set");
         return janetc_cslot(janet_wrap_nil());
@@ -519,7 +519,7 @@ static void check_metadata_lint(JanetCompiler *c, JanetTable *attr_table) {
     }
 }
 
-static JanetSlot janetc_var(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_var(JanetFopts opts, int32_t argn, const Janet *argv) {
     JanetCompiler *c = opts.compiler;
     JanetTable *attr_table = handleattr(c, "var", argn, argv);
     if (c->result.status == JANET_COMPILE_ERROR) {
@@ -587,7 +587,7 @@ static int defleaf(
     return result;
 }
 
-static JanetSlot janetc_def(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_def(JanetFopts opts, int32_t argn, const Janet *argv) {
     JanetCompiler *c = opts.compiler;
     JanetTable *attr_table = handleattr(c, "def", argn, argv);
     if (c->result.status == JANET_COMPILE_ERROR) {
@@ -641,7 +641,7 @@ static int janetc_check_nil_form(Janet x, Janet *capture, uint32_t fun_tag) {
  * ...
  * :done
  */
-static JanetSlot janetc_if(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_if(JanetFopts opts, int32_t argn, const Janet *argv) {
     JanetCompiler *c = opts.compiler;
     int32_t labelr, labeljr, labeld, labeljd;
     JanetFopts condopts, bodyopts;
@@ -747,7 +747,7 @@ static JanetSlot janetc_if(JanetFopts opts, int32_t argn, const Janet *argv) {
 
 /* Compile a do form. Do forms execute their body sequentially and
  * evaluate to the last expression in the body. */
-static JanetSlot janetc_do(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_do(JanetFopts opts, int32_t argn, const Janet *argv) {
     int32_t i;
     JanetSlot ret = janetc_cslot(janet_wrap_nil());
     JanetCompiler *c = opts.compiler;
@@ -772,7 +772,7 @@ static JanetSlot janetc_do(JanetFopts opts, int32_t argn, const Janet *argv) {
 
 /* Compile an upscope form. Upscope forms execute their body sequentially and
  * evaluate to the last expression in the body, but without lexical scope. */
-static JanetSlot janetc_upscope(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_upscope(JanetFopts opts, int32_t argn, const Janet *argv) {
     int32_t i;
     JanetSlot ret = janetc_cslot(janet_wrap_nil());
     JanetCompiler *c = opts.compiler;
@@ -810,7 +810,7 @@ static int32_t janetc_addfuncdef(JanetCompiler *c, JanetFuncDef *def) {
  *
  * jump :end or retn if in function
  */
-static JanetSlot janetc_break(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_break(JanetFopts opts, int32_t argn, const Janet *argv) {
     JanetCompiler *c = opts.compiler;
     JanetScope *scope = c->scope;
     if (argn > 1) {
@@ -866,7 +866,7 @@ static JanetSlot janetc_break(JanetFopts opts, int32_t argn, const Janet *argv) 
  * jump :whiletop
  * :done
  */
-static JanetSlot janetc_while(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_while(JanetFopts opts, int32_t argn, const Janet *argv) {
     JanetCompiler *c = opts.compiler;
     JanetSlot cond;
     JanetFopts subopts = janetc_fopts_default(c);
@@ -1001,7 +1001,7 @@ static JanetSlot janetc_while(JanetFopts opts, int32_t argn, const Janet *argv) 
     return janetc_cslot(janet_wrap_nil());
 }
 
-static JanetSlot janetc_fn(JanetFopts opts, int32_t argn, const Janet *argv) {
+JanetSlot janetc_fn(JanetFopts opts, int32_t argn, const Janet *argv) {
     JanetCompiler *c = opts.compiler;
     JanetFuncDef *def;
     JanetSlot ret;
@@ -1223,30 +1223,4 @@ error:
 error2:
     janetc_popscope(c);
     return janetc_cslot(janet_wrap_nil());
-}
-
-/* Keep in lexicographic order */
-static const JanetSpecial janetc_specials[] = {
-    {"break", janetc_break},
-    {"def", janetc_def},
-    {"do", janetc_do},
-    {"fn", janetc_fn},
-    {"if", janetc_if},
-    {"quasiquote", janetc_quasiquote},
-    {"quote", janetc_quote},
-    {"set", janetc_varset},
-    {"splice", janetc_splice},
-    {"unquote", janetc_unquote},
-    {"upscope", janetc_upscope},
-    {"var", janetc_var},
-    {"while", janetc_while}
-};
-
-/* Find a special */
-const JanetSpecial *janetc_special(const uint8_t *name) {
-    return janet_strbinsearch(
-               &janetc_specials,
-               sizeof(janetc_specials) / sizeof(JanetSpecial),
-               sizeof(JanetSpecial),
-               name);
 }

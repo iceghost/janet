@@ -137,11 +137,6 @@ pub const C = extern struct {
         }
     };
 
-    pub const Special = extern struct {
-        name: [*:0]const u8,
-        compile: *const fn (Fopts, i32, [*]const janet.Value) callconv(.c) Slot,
-    };
-
     /// A symbol and slot pair.
     pub const SymPair = extern struct {
         slot: Slot,
@@ -269,7 +264,6 @@ extern fn janetc_return(compiler: *C, slot: C.Slot) callconv(.c) C.Slot;
 extern fn janetc_copy(compiler: *C, destination: C.Slot, source: C.Slot) callconv(.c) void;
 extern fn janetc_cerror(compiler: *C, message: [*:0]const u8) callconv(.c) void;
 extern fn janetc_error(compiler: *C, message: [*:0]const u8) callconv(.c) void;
-extern fn janetc_special(name: [*:0]const u8) callconv(.c) ?*const C.Special;
 extern fn janet_formatc(format: [*:0]const u8, ...) callconv(.c) [*:0]const u8;
 extern fn janet_continue(fiber: *janet.value.Fiber, in: janet.Value, out: *janet.Value) callconv(.c) janet.Runtime.Signal;
 extern fn janet_gclock() callconv(.c) c_int;
@@ -277,6 +271,19 @@ extern fn janet_gcunlock(handle: c_int) callconv(.c) void;
 extern fn janetc_emit_s(compiler: *C, opcode: u8, slot: C.Slot, write: i32) callconv(.c) i32;
 extern fn janetc_emit_ss(compiler: *C, opcode: u8, lhs: C.Slot, rhs: C.Slot, write: i32) callconv(.c) i32;
 extern fn janetc_emit_sss(compiler: *C, opcode: u8, first: C.Slot, second: C.Slot, third: C.Slot, write: i32) callconv(.c) i32;
+extern fn janetc_break(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_def(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_do(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_fn(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_if(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_quasiquote(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_quote(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_varset(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_splice(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_unquote(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_upscope(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_var(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
+extern fn janetc_while(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 
 fn get_target(
     compiler: *Compiler,
@@ -318,6 +325,31 @@ pub fn compile(
     return compiler.c.result;
 }
 
+const SpecialForm = enum {
+    @"break",
+    def,
+    do,
+    @"fn",
+    @"if",
+    quasiquote,
+    quote,
+    set,
+    splice,
+    unquote,
+    upscope,
+    @"var",
+    @"while",
+
+    const map: std.StaticStringMap(SpecialForm) = .initComptime(blk: {
+        const values = std.enums.values(SpecialForm);
+        var res: [values.len]struct { []const u8, SpecialForm } = undefined;
+        for (&res, values) |*entry, v| {
+            entry.* = .{ @tagName(v), v };
+        }
+        break :blk res;
+    });
+};
+
 pub fn compile_value(
     compiler: *Compiler,
     rt: *janet.Runtime,
@@ -338,7 +370,7 @@ pub fn compile_value(
     defer compiler.c.recursion_guard += 1;
 
     var source = v;
-    var special: ?*const C.Special = null;
+    var special: ?SpecialForm = null;
     const max_depth = 200;
     for (0..max_depth) |_| {
         if (!source.checktype(.tuple)) break;
@@ -355,7 +387,7 @@ pub fn compile_value(
 
         if (form.is_bracketed() or !values[0].checktype(.symbol)) break;
         const name = values[0].unwrap().string;
-        if (janetc_special(@ptrCast(name.slice().ptr))) |s| {
+        if (SpecialForm.map.get(name.slice())) |s| {
             special = s;
             break;
         }
@@ -379,7 +411,23 @@ pub fn compile_value(
     if (special) |s| {
         const tuple = source.unwrap().tuple;
         const values = tuple.slice();
-        result = s.compile(fopts, @intCast(values.len - 1), values.ptr + 1);
+        const args: [*]const janet.Value = values.ptr + 1;
+        const argc: i32 = @intCast(values.len - 1);
+        result = switch (s) {
+            .@"break" => janetc_break(fopts, argc, args),
+            .def => janetc_def(fopts, argc, args),
+            .do => janetc_do(fopts, argc, args),
+            .@"fn" => janetc_fn(fopts, argc, args),
+            .@"if" => janetc_if(fopts, argc, args),
+            .quasiquote => janetc_quasiquote(fopts, argc, args),
+            .quote => janetc_quote(fopts, argc, args),
+            .set => janetc_varset(fopts, argc, args),
+            .splice => janetc_splice(fopts, argc, args),
+            .unquote => janetc_unquote(fopts, argc, args),
+            .upscope => janetc_upscope(fopts, argc, args),
+            .@"var" => janetc_var(fopts, argc, args),
+            .@"while" => janetc_while(fopts, argc, args),
+        };
     } else switch (source.repr.unwrap_tag()) {
         .tuple => {
             const tuple = source.unwrap().tuple;
