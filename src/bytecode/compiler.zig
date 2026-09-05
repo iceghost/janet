@@ -132,8 +132,12 @@ pub const C = extern struct {
             return .{
                 .compiler = &compiler.c,
                 .flags = .{},
-                .hint = .constant(.nil),
+                .hint = undefined,
             };
+        }
+
+        pub fn unwrap_hint(self: Fopts) ?Slot {
+            return if (self.flags.hint) self.hint else null;
         }
     };
 
@@ -289,10 +293,14 @@ extern fn janetc_while(C.Fopts, i32, [*]const janet.Value) callconv(.c) C.Slot;
 fn get_target(
     compiler: *Compiler,
     rt: *janet.Runtime,
-    hint: C.Slot,
-    flags: C.Fopts.Flags,
+    hint: ?C.Slot,
 ) Error!C.Slot {
-    if (flags.hint and hint.envindex < 0 and @intFromEnum(hint.index) <= 0xFF) return hint;
+    if (hint) |h| {
+        if (h.envindex < 0 and @intFromEnum(h.index) <= 0xFF) {
+            return h;
+        }
+    }
+
     return .{
         .value = .nil,
         .index = try compiler.allocfar(rt),
@@ -352,7 +360,7 @@ const SpecialForm = enum {
 };
 
 pub const CompileOptions = struct {
-    hint: C.Slot = .constant(.nil),
+    hint: ?C.Slot = null,
     flags: C.Fopts.Flags = .{},
 };
 
@@ -407,7 +415,7 @@ pub fn compile_value(
 
     const fopts: C.Fopts = .{
         .compiler = &compiler.c,
-        .hint = options.hint,
+        .hint = options.hint orelse undefined,
         .flags = options.flags,
     };
     var result: C.Slot = undefined;
@@ -479,7 +487,7 @@ pub fn compile_value(
             } else {
                 _ = compiler.emit_arguments(rt, arena, slots.items());
 
-                result = try get_target(compiler, rt, options.hint, options.flags);
+                result = try get_target(compiler, rt, options.hint);
 
                 _ = janetc_emit_s(&compiler.c, @intFromEnum(switch (t) {
                     .table => janet.bytecode.OpCode.make_table,
@@ -495,9 +503,9 @@ pub fn compile_value(
 
     if (compiler.c.result.status == .@"error") return error.CompileFailed;
     if (options.flags.tail) result = janetc_return(&compiler.c, result);
-    if (options.flags.hint) {
-        janetc_copy(&compiler.c, options.hint, result);
-        result = options.hint;
+    if (options.hint) |h| {
+        janetc_copy(&compiler.c, h, result);
+        result = h;
     }
     return result;
 }

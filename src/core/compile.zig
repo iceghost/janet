@@ -47,7 +47,7 @@ fn value(opts: Compiler.C.Fopts, v: janet.Value) callconv(.c) Compiler.C.Slot {
     defer compiler.arena_per_compilation = scratch.state;
     return compiler.compile_value(rt, scratch.allocator(), v, .{
         .flags = opts.flags,
-        .hint = opts.hint,
+        .hint = opts.unwrap_hint(),
     }) catch |err| switch (err) {
         error.OutOfMemory => rt.oom(),
         error.CompileFailed => .constant(.nil),
