@@ -339,11 +339,36 @@ pub fn compile_value(
 
     var source = v;
     var special: ?*const C.Special = null;
-    var macro_expansions: usize = 200;
-    while (macro_expansions > 0 and
-        try compiler.macroexpand1(rt, source, &source, &special)) : (macro_expansions -= 1)
-    {}
-    if (macro_expansions == 0) return compiler.fail("recursed too deeply in macro expansion");
+    const max_depth = 200;
+    for (0..max_depth) |_| {
+        if (!source.checktype(.tuple)) break;
+        const form = source.unwrap().tuple;
+        const values = form.slice();
+        if (values.len == 0) break;
+
+        if (form.line >= 0) {
+            compiler.c.current_mapping = .{
+                .line = form.line,
+                .column = form.column,
+            };
+        }
+
+        if (form.is_bracketed() or !values[0].checktype(.symbol)) break;
+        const name = values[0].unwrap().string;
+        if (janetc_special(@ptrCast(name.slice().ptr))) |s| {
+            special = s;
+            break;
+        }
+
+        if (try compiler.macroexpand1(rt, form, name, &source)) {
+            continue;
+        } else {
+            // cannot expand anymore, stop
+            break;
+        }
+    } else {
+        return compiler.fail("recursed too deeply in macro expansion");
+    }
 
     const fopts: C.Fopts = .{
         .compiler = &compiler.c,
@@ -426,33 +451,14 @@ pub fn compile_value(
     return result;
 }
 
-/// Expand a macro one time. Also get the special form compiler if we find one.
+/// Expand a known non-special form one time if its name resolves to a macro.
 fn macroexpand1(
     compiler: *Compiler,
     rt: *janet.Runtime,
-    source: janet.Value,
+    form: *janet.Tuple,
+    name: *janet.value.String,
     out: *janet.Value,
-    special: *?*const C.Special,
 ) Error!bool {
-    if (!source.checktype(.tuple)) return false;
-    const form = source.unwrap().tuple;
-    const values = form.slice();
-    if (values.len == 0) return false;
-
-    if (form.line >= 0) {
-        compiler.c.current_mapping = .{
-            .line = form.line,
-            .column = form.column,
-        };
-    }
-
-    if (form.is_bracketed() or !values[0].checktype(.symbol)) return false;
-    const name = values[0].unwrap().string;
-    if (janetc_special(@ptrCast(name.slice().ptr))) |s| {
-        special.* = s;
-        return false;
-    }
-
     const env = compiler.c.env.?;
     const binding = env.resolve(name);
     if (binding.type != .macro and binding.type != .dynamic_macro) return false;
@@ -463,7 +469,7 @@ fn macroexpand1(
     if (!macro_value.checktype(.function)) return false;
 
     const macro = macro_value.unwrap().function;
-    const args = values[1..];
+    const args = form.slice()[1..];
     const fiber = janet.value.Fiber.create(rt, macro, 64, args) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.ArityTooFew => {
@@ -482,7 +488,7 @@ fn macroexpand1(
 
     const macro_form = try janet.Value.keyword(rt, "macro-form");
     const macro_lints = try janet.Value.keyword(rt, "macro-lints");
-    try env.put(rt, macro_form, source);
+    try env.put(rt, macro_form, .tuple(form));
     if (compiler.c.lints) |lints| try env.put(rt, macro_lints, .array(lints));
 
     var result: janet.Value = undefined;
